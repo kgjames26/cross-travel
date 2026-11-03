@@ -347,7 +347,7 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
         alternates: state.mode === 'moto' ? 5 : 0,
         costing: state.mode === 'moto' ? 'motorcycle' : 'bicycle',
         costing_options: state.mode === 'moto'
-          ? {motorcycle: {use_highways: 0, use_trails: 1, use_tracks: 1, use_distance: 0.7, use_tolls: 0, use_living_streets: 0}}
+          ? {motorcycle: {use_highways: 0, use_trails: 1, use_tracks: 1, use_distance: 0.9, top_speed: 30, speed_penalty_factor: 0.5, use_tolls: 0, use_living_streets: 0}}
           : {bicycle: {bicycle_type: 'road', cycling_speed: 25, use_roads: 1, use_hills: 1, use_ferry: 0.3, use_living_streets: 0, avoid_bad_surfaces: 0.85}},
         directions_options: {units: 'kilometers', language: 'fr-FR'},
         shape_format: 'geojson'
@@ -379,9 +379,9 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
         });
         const longest = Math.max(1, ...scored.map(item => item.length));
         scored.sort((a, b) => {
-          const score = item => item.roughShare * 10
-            - item.highwayShare * 20
-            + item.length / longest;
+          const score = item => item.roughShare * 20
+            - item.highwayShare * 50
+            + item.length / longest * 0.5;
           return score(b) - score(a);
         });
         if (scored.length) payload.trip = scored[0].trip;
