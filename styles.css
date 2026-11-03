@@ -147,3 +147,59 @@ body.nav-active .nav-rider img[src*="velo-familial"]{width:min(40vw,220px)}
 .locate-button{width:36px;height:38px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;color:#668342;flex:none}
 .locate-button svg{width:17px;height:17px;display:block;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .locate-button small{font:600 7px 'DM Mono',monospace;line-height:1;color:#718568}
+
+/* Mode themes: the selected activity colors the full interface. */
+:root{
+ --mode-accent:#d4f27e;--mode-strong:#638b2d;--mode-accent-strong:#95772d;
+ --mode-wash:#edf6dc;--mode-deep:#101914;--mode-paper:#f1f3ed;
+ --green:var(--mode-accent);--green-dark:var(--mode-strong)
+}
+body[data-mode="vtt"]{
+ --mode-accent:#d4f27e;--mode-strong:#638b2d;--mode-accent-strong:#95772d;
+ --mode-wash:#edf6dc;--mode-deep:#101914;--mode-paper:#f1f3ed
+}
+body[data-mode="family"]{
+ --mode-accent:#74ddc5;--mode-strong:#087d6b;--mode-accent-strong:#138f7a;
+ --mode-wash:#def5ee;--mode-deep:#0c2925;--mode-paper:#eef9f5
+}
+body[data-mode="moto"]{
+ --mode-accent:#ff9d62;--mode-strong:#b34f20;--mode-accent-strong:#cf6127;
+ --mode-wash:#fff0e5;--mode-deep:#2c1b13;--mode-paper:#faf1eb
+}
+body{background:radial-gradient(ellipse at 8% 8%,var(--mode-wash) 0,transparent 42%),var(--mode-paper);transition:background-color .3s ease}
+.topbar{background:linear-gradient(110deg,var(--mode-deep),#1c2a22);transition:background .3s ease}
+.brand-mark{background:var(--mode-accent);transition:background .25s ease}
+h1 em{color:var(--mode-strong);transition:color .25s ease}
+.eyebrow{color:var(--mode-strong);background:var(--mode-wash);border-radius:999px;padding:7px 10px;width:max-content}
+.eyebrow-line{background:var(--mode-strong)}
+.planner-card{border-top:3px solid var(--mode-accent);transition:border-color .25s ease,box-shadow .25s ease}
+.mode-button.active{background:var(--mode-deep);color:var(--mode-accent)}
+.mode-button.active small{color:var(--mode-accent)}
+.primary-button{background:linear-gradient(110deg,var(--mode-accent),color-mix(in srgb,var(--mode-accent) 78%,white));color:#17221a}
+.primary-button:hover{filter:brightness(.96);background:linear-gradient(110deg,var(--mode-accent),color-mix(in srgb,var(--mode-accent) 78%,white))}
+.check-row input:checked+.custom-check{background:var(--mode-deep);border-color:var(--mode-deep)}
+.map-panel{outline:1px solid color-mix(in srgb,var(--mode-strong) 18%,transparent);transition:outline-color .3s ease}
+.map-badge-dot{background:var(--mode-strong)}
+.nav-mode-pill{color:var(--mode-accent);border-color:color-mix(in srgb,var(--mode-accent) 35%,transparent);background:color-mix(in srgb,var(--mode-accent) 10%,transparent)}
+.nav-guidance .turn-arrow{background:var(--mode-accent);color:var(--mode-deep)}
+.nav-speed-value strong{color:var(--mode-accent)}
+.nav-progress span{background:linear-gradient(90deg,var(--mode-strong),var(--mode-accent));box-shadow:0 0 14px color-mix(in srgb,var(--mode-accent) 45%,transparent)}
+.nav-motion-line i{background:var(--mode-accent)}
+.footer button{color:var(--mode-strong)}
+.locate-button{color:var(--mode-strong)}
+/* Three cutouts sit inside the heading block as a welcoming mode montage. */
+.hero-title{margin:15px 0 10px}
+.hero-title h1{font-size:clamp(36px,3.6vw,54px);line-height:.98;letter-spacing:-.065em;margin:0}
+.title-clipart-mix{height:106px;max-width:310px;margin:1px auto 6px;display:flex;justify-content:center;align-items:flex-end;isolation:isolate}
+.title-clipart-mix img{position:relative;z-index:1;width:108px;height:99px;object-fit:contain;margin:0 -12px;filter:drop-shadow(0 8px 9px rgba(25,37,28,.13))}
+.title-clipart-mix .title-family{z-index:3;width:116px;height:98px}
+.title-clipart-mix .title-vtt{z-index:2;transform:translateY(2px)}
+.title-clipart-mix .title-moto{z-index:1;transform:translateY(4px)}
+.title-clipart-mix:before{content:"";position:absolute;width:220px;height:72px;bottom:4px;border-radius:50%;background:radial-gradient(ellipse,var(--mode-wash),transparent 70%);z-index:-1}
+@media(max-width:680px){
+ .hero-title{order:1;margin:0}
+ .hero-title h1{font-size:39px}
+ .title-clipart-mix{height:92px;margin:0 auto 2px}
+ .title-clipart-mix img{height:88px;width:100px}
+ .title-clipart-mix .title-family{height:88px;width:108px}
+}
