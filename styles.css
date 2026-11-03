@@ -526,3 +526,31 @@ body{
   .brand-cliparts .brand-family{width:37px}
   .brand-cliparts .brand-road{width:33px}
 }
+
+
+/* Full-screen arrival animation */
+.arrival-intro{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;overflow:hidden;background:radial-gradient(ellipse at 18% 82%,rgba(116,191,48,.22),transparent 33%),radial-gradient(ellipse at 82% 22%,rgba(255,94,61,.19),transparent 32%),radial-gradient(ellipse at 52% 48%,#1e3028 0,#111a16 72%);color:#f8fff7;animation:arrival-intro-exit .46s cubic-bezier(.66,0,.84,.2) 1.92s forwards}
+.arrival-intro:before,.arrival-intro:after{content:"";position:absolute;width:42vw;height:42vw;border:1px solid rgba(207,246,169,.08);border-radius:50%;pointer-events:none}
+.arrival-intro:after{width:64vw;height:64vw;border-color:rgba(207,246,169,.045)}
+.arrival-intro__scene{position:relative;width:min(1020px,94vw);height:min(640px,86vh);min-height:350px}
+.arrival-intro__brand{position:absolute;top:11%;left:50%;z-index:2;display:flex;align-items:center;gap:20px;transform:translateX(-50%);white-space:nowrap;animation:arrival-brand-in .72s cubic-bezier(.18,.84,.24,1.18) both}
+.arrival-intro__mark{width:clamp(64px,10vw,108px);height:clamp(64px,10vw,108px);display:grid;place-items:center;border-radius:26px;background:#b8ff3d;box-shadow:0 0 48px rgba(184,255,61,.28)}
+.arrival-intro__mark svg{width:78%;height:78%;fill:#142018}
+.arrival-intro__name{font:700 clamp(43px,9.5vw,104px)/.9 'Space Grotesk',sans-serif;letter-spacing:-.08em}
+.arrival-intro__name b{color:#b8ff3d;font-weight:500;margin-left:.12em}
+.arrival-intro__track{position:absolute;inset:22% 0 5%;width:100%;height:76%;overflow:visible}
+.arrival-intro__track path{fill:none;stroke:url(#arrival-track-gradient);stroke-width:5;stroke-linecap:round;stroke-dasharray:12 17;filter:drop-shadow(0 0 9px rgba(163,239,94,.3));animation:arrival-track-flow .72s linear infinite}
+.arrival-intro__vehicles{position:absolute;inset:24% 0 5%}
+.arrival-vehicle{position:absolute;width:clamp(92px,13vw,154px);height:clamp(110px,23vh,190px);object-fit:contain;opacity:0;filter:drop-shadow(0 17px 16px rgba(0,0,0,.32));animation:arrival-vehicle-in .75s cubic-bezier(.16,.82,.24,1.14) both}
+.arrival-vehicle--family{left:3%;top:46%;--arrival-x:-34vw;--arrival-y:16vh;--arrival-turn:-12deg}
+.arrival-vehicle--road{left:28%;top:17%;--arrival-x:-23vw;--arrival-y:-18vh;--arrival-turn:9deg;animation-delay:.12s}
+.arrival-vehicle--vtt{left:53%;top:38%;--arrival-x:20vw;--arrival-y:-17vh;--arrival-turn:-10deg;animation-delay:.24s}
+.arrival-vehicle--moto{right:3%;top:8%;--arrival-x:36vw;--arrival-y:17vh;--arrival-turn:13deg;animation-delay:.36s}
+.arrival-intro__caption{position:absolute;bottom:1%;left:50%;margin:0;transform:translateX(-50%);color:#aebeb1;font:500 11px 'DM Mono',monospace;letter-spacing:.24em;white-space:nowrap;animation:arrival-caption-in .5s ease .5s both}
+@keyframes arrival-brand-in{from{opacity:0;transform:translate(-50%,24px) scale(.76)}to{opacity:1;transform:translate(-50%,0) scale(1)}}
+@keyframes arrival-vehicle-in{0%{opacity:0;transform:translate(var(--arrival-x),var(--arrival-y)) scale(.48) rotate(var(--arrival-turn))}72%{opacity:1;transform:translate(0,-8px) scale(1.07) rotate(-2deg)}100%{opacity:1;transform:translate(0,0) scale(1) rotate(0)}}
+@keyframes arrival-track-flow{to{stroke-dashoffset:-58}}
+@keyframes arrival-caption-in{from{opacity:0;letter-spacing:.45em}to{opacity:1;letter-spacing:.24em}}
+@keyframes arrival-intro-exit{to{opacity:0;transform:scale(1.12);visibility:hidden}}
+@media(max-width:600px){.arrival-intro__scene{width:100vw;height:min(570px,76vh);min-height:330px}.arrival-intro__brand{top:12%;gap:12px}.arrival-intro__mark{border-radius:18px}.arrival-intro__vehicles{inset:29% 1% 9%}.arrival-vehicle{width:clamp(76px,21vw,112px);height:clamp(98px,19vh,148px)}.arrival-vehicle--family{left:0;top:52%}.arrival-vehicle--road{left:24%;top:26%}.arrival-vehicle--vtt{left:50%;top:46%}.arrival-vehicle--moto{right:0;top:17%}.arrival-intro__track{inset:28% 0 9%;height:70%}.arrival-intro__caption{font-size:9px;letter-spacing:.12em}}
+@media(prefers-reduced-motion:reduce){.arrival-intro{animation-duration:.01ms;animation-delay:0s}.arrival-intro__brand,.arrival-vehicle,.arrival-intro__caption{animation-duration:.01ms;animation-delay:0s;opacity:1}.arrival-intro__track path{animation:none}}
