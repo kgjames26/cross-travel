@@ -6,7 +6,7 @@ PWA en français pour préparer des itinéraires VTT et motocross/enduro sur une
 
 - Recherche assistée de lieux et adresses par Photon, avec suggestions pendant la saisie et choix de résultat sans adresse exacte.
 - Départ depuis le GPS, saisie d’un lieu ou choix manuel sur la carte; même choix pour l’arrivée.
-- Profil VTT calculé par BRouter (profil `trekking`) pour privilégier les pistes, chemins et voies cyclables présents dans OSM.
+- Profil VTT calculé par BRouter (`mtb`), profil dédié au mountain bike qui tient compte des sentiers et de leur niveau technique dans les données OSM.
 - Profil motocross/enduro calculé par Valhalla (`motorcycle`), avec réglages pour éviter les grands axes et favoriser les voies adaptées aux véhicules motorisés selon les attributs OSM.
 - Affichage du tracé, guidage GPS, recalcul après écart, favoris locaux et maintien de l’écran si le navigateur autorise Wake Lock.
 - Export du tracé en GPX pour import manuel dans OsmAnd; lien vers Wikiloc pour la recherche externe de traces.
@@ -18,7 +18,7 @@ La carte est dessinée avec Leaflet et les tuiles standards `https://tile.openst
 
 La recherche d’adresse utilise l’API Photon publique de Komoot avec une limite de résultats et un biais vers le centre de carte. Le service public peut limiter les requêtes et n’offre pas de garantie de disponibilité.
 
-BRouter est appelé via `https://brouter.de/brouter` avec le profil `trekking` pour le VTT. Le profil et les cartes sont basés sur OSM et ne garantissent pas qu’un passage soit praticable ou ouvert à la date de sortie.
+BRouter est appelé via `https://brouter.de/brouter` avec le profil `mtb` pour le VTT. BRouter fournit un profil VTT dédié, distinct du profil `trekking` de randonnée à vélo. Le tracé dépend de la qualité des données OSM : il ne garantit ni l’ouverture actuelle, ni la praticabilité, ni l’adéquation du niveau technique.
 
 Le calcul motocross/enduro utilise Valhalla et le profil moto. Les réglages pistes et grands axes ajustent les préférences du moteur; le profil doit respecter les accès motorisés connus dans les données OSM. Un chemin autorisé aux vélos, un RAVeL ou un sentier forestier n’est pas automatiquement autorisé aux motos. Cross Travel n’ajoute pas volontairement de voies interdites aux véhicules motorisés. Vérifiez les panneaux, arrêtés, autorisations privées et conditions sur place.
 

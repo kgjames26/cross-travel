@@ -192,7 +192,7 @@ function normalizeBRouter(payload) {
   for (let i = 1; i < path.length; i++) distanceMeters += L.latLng(path[i - 1]).distanceTo(L.latLng(path[i]));
   const props = feature.properties || {};
   if (Number(props['track-length']) > 0) distanceMeters = Number(props['track-length']) * 1000;
-  const durationSeconds = Number(props['total-time']) > 0 ? Number(props['total-time']) : distanceMeters / 1000 / 12 * 3600;
+  const durationSeconds = Number(props['total-time']) > 0 ? Number(props['total-time']) : distanceMeters / 1000 / 10 * 3600;
   const steps = [];
   let previousIndex = 0, lastTurnAt = 0;
   const distanceAt = [0];
@@ -238,7 +238,7 @@ function normalizeBRouter(payload) {
 async function requestBRouter(origin, destination) {
   const params = new URLSearchParams({
     lonlats: `${origin.lon},${origin.lat}|${destination.lon},${destination.lat}`,
-    profile: 'trekking', alternativeidx: '0', format: 'geojson'
+    profile: 'mtb', alternativeidx: '0', format: 'geojson'
   });
   const response = await fetch(`${BROUTER_URL}?${params}`);
   const text = await response.text();
@@ -427,9 +427,9 @@ function setMode(mode) {
     button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active));
   });
   document.querySelectorAll('.moto-only').forEach(node => node.classList.toggle('hidden', state.mode !== 'moto'));
-  $('#mode-hint').textContent = state.mode === 'vtt' ? 'VTT · BROUTER' : 'MOTO · VALHALLA';
+  $('#mode-hint').textContent = state.mode === 'vtt' ? 'VTT · MTB' : 'MOTO · VALHALLA';
   $('#routing-note').textContent = state.mode === 'vtt'
-    ? 'Profil VTT BRouter : privilégie les chemins, pistes et voies vertes. Les accès affichés par OSM doivent être vérifiés.'
+    ? 'Profil MTB BRouter : privilégie les pistes et sentiers roulables selon OSM. Vérifiez les accès et le niveau technique avant le départ.'
     : 'Profil motocross / enduro Valhalla : réduit les grands axes et favorise les pistes accessibles aux motos selon OSM.';
   $('#route-button span').textContent = `Calculer mon itinéraire ${state.mode === 'vtt' ? 'VTT' : 'moto'}`;
 }
