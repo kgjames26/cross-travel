@@ -285,6 +285,7 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
     }
     state.currentStep = 0;
     state.lastSpokenStep = -1;
+    state.routeStartDistanceTravelled = state.distanceTravelledMeters;
     drawRoute(); showRoute();
     $('#map-mode-label').textContent = state.mode === 'vtt' ? 'OSM · BROUTER · PROFIL VTT' : 'OSM · VALHALLA · PROFIL MOTO';
     $('#route-alert-text').textContent = state.mode === 'vtt'
@@ -292,6 +293,10 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
       : 'Profil moto Valhalla en bêta. Les chemins accessibles aux VTT peuvent être interdits aux motos : vérifiez la signalisation et l’autorisation réelle.';
     const wikilocQuery = encodeURIComponent(`${$('#origin-input').value} ${$('#destination-input').value} ${state.mode === 'vtt' ? 'VTT' : 'enduro motocross'}`);
     $('#wikiloc-link').href = `https://www.wikiloc.com/search?query=${wikilocQuery}`;
+    if (state.watchId !== null) {
+      if (state.mode === 'moto') announceStep(0);
+      else speakText('Parcours VTT recalculé. Suivez le nouveau tracé.');
+    }
     if (state.watchId !== null) {
       if (state.mode === 'moto') announceStep(0);
       else speakText('Parcours VTT recalculé. Suivez le nouveau tracé.');

@@ -29,7 +29,7 @@
     <main class="main-layout">
       <aside class="sidebar">
         <div class="eyebrow"><span class="eyebrow-line"></span> VOTRE PROCHAINE SORTIE</div>
-        <h1>Moins de bitume,<br><em>plus d’adrénaline.</em></h1>
+        <h1>Moins de béton,<br><em>plus de sensations</em></h1>
         <p class="intro">Des itinéraires pour VTT et motocross, au plus près des chemins autorisés.</p>
 
         <div class="planner-card">
@@ -76,9 +76,21 @@
         <div class="map-top-controls"><div class="map-badge"><span class="map-badge-dot"></span><span id="map-mode-label">CARTE DE REPÉRAGE</span></div><button class="map-control" id="center-map" title="Centrer sur ma position" aria-label="Centrer sur ma position">◎</button></div>
         <div class="map-pick-hint hidden" id="map-pick-hint">Touchez la carte pour placer le <strong id="map-pick-label">départ</strong>. <button id="cancel-map-pick" type="button">Annuler</button></div>
         <div id="nav-panel" class="nav-panel hidden">
-          <div class="nav-top"><span class="nav-live"><i></i> NAVIGATION ACTIVE</span><button id="voice-toggle" class="voice-toggle" type="button" aria-pressed="true">Voix activée</button><button id="stop-navigation" class="nav-stop">Terminer</button></div>
-          <div class="next-turn"><span class="turn-arrow" id="turn-arrow">↑</span><div><small>PROCHAINE INSTRUCTION</small><strong id="nav-instruction">Suivez le parcours</strong><span id="nav-distance">En attente du GPS</span></div></div>
-          <div class="nav-progress"><span id="nav-progress-bar"></span></div><div class="nav-footer"><span id="nav-remaining">— restant</span><span id="nav-step-count">Étape —</span></div>
+          <div class="nav-top"><span class="nav-live"><i></i> NAVIGATION ACTIVE</span><div class="nav-actions"><button id="voice-toggle" class="voice-toggle" type="button" aria-pressed="true">Voix activée</button><button id="stop-navigation" class="nav-stop">Terminer</button></div></div>
+          <div class="nav-fullscreen-content">
+            <span class="nav-mode-pill" id="nav-mode-pill">VTT · GPS ACTIF</span>
+            <div class="nav-guidance"><span class="turn-arrow" id="turn-arrow">↑</span><div><small>PROCHAINE INSTRUCTION</small><strong id="nav-instruction">Suivez le parcours</strong><span id="nav-distance">En attente du GPS</span></div></div>
+            <div class="nav-rider" id="nav-rider"><div class="nav-motion-line"><i></i><i></i><i></i><i></i><i></i></div><img id="nav-rider-image" src="assets/vtt-dynamique.webp" alt="Illustration animée du parcours"></div>
+            <div class="nav-live-metrics">
+              <div class="nav-speed"><small class="nav-speed-label">VITESSE INSTANTANÉE</small><div class="nav-speed-value"><strong id="nav-speed">0</strong><span>km/h</span></div><small id="nav-speed-average">Analyse de votre vitesse…</small></div>
+              <div class="nav-secondary-metrics">
+                <div><small>PARCOURU</small><strong id="nav-travelled">0,00 km</strong></div>
+                <div><small>RESTANT</small><strong id="nav-remaining">— km</strong></div>
+                <div><small>HEURE D’ARRIVÉE ESTIMÉE</small><strong id="nav-arrival">Calcul en cours</strong></div>
+              </div>
+            </div>
+            <div class="nav-progress"><span id="nav-progress-bar"></span></div><div class="nav-footer"><span id="nav-step-count">Étape —</span><span id="nav-gps-status">Recherche du GPS</span></div>
+          </div>
         </div>
         <div class="map-legend"><span><i class="legend-route"></i> Parcours calculé</span><span><i class="legend-unknown"></i> Statut d’accès non vérifié</span></div>
       </section>

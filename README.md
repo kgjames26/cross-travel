@@ -8,7 +8,9 @@ PWA en français pour préparer des itinéraires VTT et motocross/enduro sur une
 - Départ depuis le GPS, saisie d’un lieu ou choix manuel sur la carte; même choix pour l’arrivée.
 - Profil VTT calculé par BRouter (`mtb`), profil dédié au mountain bike. L’option « Priorité aux chemins et pistes » augmente le coût des routes et renforce nettement la préférence pour les itinéraires cyclables répertoriés, dont les RAVeL quand ils sont correctement cartographiés.
 - Profil motocross/enduro calculé par Valhalla (`motorcycle`), avec `use_trails` et `use_tracks` au maximum et `use_highways` à zéro quand la priorité chemins est activée. Les accès moto connus dans OSM continuent de s’appliquer.
-- Affichage du tracé, guidage GPS, recalcul après écart, favoris locaux et maintien de l’écran si le navigateur autorise Wake Lock.
+- Affichage des distances en kilomètres (le `track-length` BRouter, renvoyé en mètres, est converti correctement), guidage GPS, recalcul après écart et favoris locaux.
+- Navigation plein écran avec instruction agrandie, synthèse vocale française activable, vitesse GPS instantanée, distance parcourue/restante, animation VTT ou motocross arrêtée à l’immobilisation et heure d’arrivée estimée selon la vitesse moyenne en mouvement.
+- Maintien de l’écran si le navigateur autorise Wake Lock.
 - Export du tracé en GPX pour import manuel dans OsmAnd; lien vers Wikiloc pour la recherche externe de traces.
 - Interface installable comme PWA.
 
@@ -24,7 +26,9 @@ Le calcul motocross/enduro utilise Valhalla et le profil moto. Les réglages pis
 
 Wikiloc ne fournit pas d’API publique d’import de traces à l’application : le lien ouvre sa recherche dans un nouvel onglet. L’export GPX sert à importer le parcours dans OsmAnd (ou une application compatible). OsmAnd n’est pas lancé automatiquement par le site.
 
-Les indications moto utilisent les manœuvres envoyées par Valhalla. Pour le VTT, Cross Travel déduit des indications de virage approximatives de la géométrie BRouter; elles ne remplacent pas l’observation du tracé sur la carte. La synthèse vocale française du navigateur annonce les instructions en approche; le bouton **Voix activée / Voix coupée** la contrôle. La durée VTT est une estimation lorsque le moteur ne fournit pas de temps.
+Les distances sont affichées en kilomètres. La propriété `track-length` de BRouter étant fournie en mètres, elle est conservée dans son unité avant l’affichage.
+
+Les indications moto utilisent les manœuvres envoyées par Valhalla. Pour le VTT, Cross Travel déduit des indications de virage approximatives de la géométrie BRouter; elles ne remplacent pas l’observation du tracé sur la carte. La synthèse vocale française du navigateur annonce les instructions en approche; le bouton **Voix activée / Voix coupée** la contrôle. La durée VTT est une estimation lorsque le moteur ne fournit pas de temps. En navigation plein écran, le guidage vocal annonce les instructions en français; vitesse instantanée, distance parcourue/restante et heure d’arrivée estimée selon la vitesse moyenne en mouvement sont affichées. L’illustration correspondant au mode choisi s’anime pendant le déplacement et s’arrête à l’arrêt.
 
 ## Configuration
 
