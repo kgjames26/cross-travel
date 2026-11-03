@@ -268,3 +268,18 @@ h1 em{color:var(--mode-strong);transition:color .25s ease}
  .hero-title{order:1;margin:0}
  .hero-title h1{font-size:39px}
 }
+
+/* Road cycling theme and four clear transport choices. */
+body[data-mode="road"]{
+ --mode-accent:#168dff;--mode-strong:#0055a8;--mode-accent-strong:#0878dc;
+ --mode-wash:#dceeff;--mode-deep:#06284b;--mode-deep-end:#0b4778;--mode-paper:#f2f8ff
+}
+.mode-switch{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}
+.mode-button{min-width:0;min-height:62px}
+.mode-button[data-mode="road"] img{filter:drop-shadow(0 3px 5px rgba(0,71,142,.18))}
+.brand-cliparts .brand-road{z-index:4;width:55px;transform:translateY(-1px)}
+@media(max-width:900px){.brand-cliparts .brand-road{width:47px}}
+@media(max-width:680px){.brand-cliparts .brand-road{width:38px;height:39px}}
+@media(max-width:360px){.brand-cliparts .brand-road{width:34px;height:36px}}
+.nav-rider img[src*="velo-route"]{width:min(48vw,320px);object-fit:contain;border-radius:0}
+body.nav-active .nav-rider img[src*="velo-route"]{width:min(40vw,220px)}

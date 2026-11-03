@@ -324,6 +324,7 @@ async function requestBRouter(origin, destination) {
 
 
 async function calculateRoute(fromOverride = null, toOverride = null) {
+  if (state.mode === 'moto') { toast('Le mode motocross est réservé aux circuits privés ou explicitement autorisés.'); return; }
   const button = $('#route-button'); button.disabled = true;
   button.querySelector('span').textContent = 'Calcul en cours…';
   try {
@@ -334,18 +335,13 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
     if (state.mode === 'family' || state.mode === 'vtt') {
       state.route = await requestBRouter(origin, destination);
     } else {
-      const preferPaths = $('#favor-trails').checked;
-      const trailPreference = state.seekIntense || preferPaths ? 1 : 0;
-      const trackPreference = state.seekIntense ? 1 : preferPaths ? 1 : 0.5;
-      const highwayPreference = state.seekIntense ? 0 : preferPaths ? 0 : 0.5;
-      const tollPreference = $('#avoid-tolls').checked ? 0 : 0.5;
       const response = await fetch(state.routeServer, {
         method: 'POST',
         headers: {'Content-Type': 'application/json', 'X-Client-Id': 'cross-travel (github.com/kgjames26/cross-travel)'},
         body: JSON.stringify({
           locations: [{lat: origin.lat, lon: origin.lon, type: 'break'}, {lat: destination.lat, lon: destination.lon, type: 'break'}],
-          costing: 'motorcycle',
-          costing_options: {motorcycle: {use_highways: highwayPreference, use_trails: trailPreference, use_tracks: trackPreference, use_living_streets: state.seekIntense || preferPaths ? 0 : 0.5, use_tolls: tollPreference}},
+          costing: 'bicycle',
+          costing_options: {bicycle: {bicycle_type: 'road', cycling_speed: 25, use_roads: 1, use_hills: 1, use_ferries: 0.3, use_living_streets: 0, avoid_bad_surfaces: 0.85}},
           directions_options: {units: 'kilometers', language: 'fr-FR'},
           shape_format: 'geojson'
         })
@@ -358,23 +354,23 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
     state.lastSpokenStep = -1;
     state.routeStartDistanceTravelled = state.distanceTravelledMeters;
     drawRoute(); showRoute();
-    $('#map-mode-label').textContent = state.mode === 'family' ? 'OSM · CHEMINS FACILES' : state.mode === 'vtt' ? 'OSM · BROUTER · PROFIL VTT' : 'OSM · VALHALLA · PROFIL MOTO';
+    $('#map-mode-label').textContent = state.mode === 'family' ? 'OSM · RAVeL & CHEMINS' : state.mode === 'road' ? 'OSM · VÉLO DE ROUTE · RAPIDE' : state.mode === 'vtt' ? 'OSM · BROUTER · PROFIL VTT' : 'MOTOCROSS · CIRCUIT AUTORISÉ UNIQUEMENT';
     $('#route-alert-text').textContent = state.mode === 'family'
       ? 'Vélo familial : RAVeL balisés prioritaires; voies cyclables en bord de route fortement pénalisées. Les routes ne servent qu’aux raccordements nécessaires.'
-      : state.mode === 'vtt'
-        ? state.seekIntense ? 'VTT sensations : le calcul cherche des sentiers plus engagés et accepte les détours. Vérifiez le niveau technique et l’accès.' : 'VTT : priorité aux sentiers, RAVeL et voies cyclables; les routes fréquentées sont pénalisées.'
-        : state.seekIntense ? 'Motocross sensations : pistes et chemins ouverts aux motos favorisés, avec des détours possibles. Vérifiez toujours signalisation et autorisations.' : 'Motocross : chemins accessibles aux motos favorisés; vérifiez toujours signalisation et autorisations.';
-    const wikilocQuery = encodeURIComponent(`${$('#origin-input').value} ${$('#destination-input').value} ${state.mode === 'family' ? 'vélo familial chemins faciles' : state.mode === 'vtt' ? 'VTT' : 'motocross'}`);
+      : state.mode === 'road'
+        ? 'Vélo de route : trajet rapide sur routes adaptées et pistes cyclables; surfaces peu roulantes pénalisées.'
+        : state.seekIntense ? 'VTT sensations : le calcul cherche des sentiers plus engagés et accepte les détours. Vérifiez le niveau technique et l’accès.' : 'VTT : priorité aux sentiers, RAVeL et voies cyclables; les routes fréquentées sont pénalisées.';
+    const wikilocQuery = encodeURIComponent(`${$('#origin-input').value} ${$('#destination-input').value} ${state.mode === 'family' ? 'vélo familial RAVeL' : state.mode === 'road' ? 'vélo de route' : 'VTT'}`);
     $('#wikiloc-link').href = `https://www.wikiloc.com/search?query=${wikilocQuery}`;
     if (state.watchId !== null) {
       if (state.mode === 'moto') announceStep(0);
-      else speakText(state.mode === 'family' ? 'Parcours vélo familial recalculé.' : 'Parcours VTT recalculé. Suivez le nouveau tracé.');
+      else speakText(state.mode === 'family' ? 'Parcours vélo familial recalculé.' : state.mode === 'road' ? 'Itinéraire vélo de route recalculé.' : 'Parcours VTT recalculé. Suivez le nouveau tracé.');
     }
     if (fromOverride) toast('Itinéraire recalculé depuis votre position.');
   } catch (error) {
     toast(error.message || 'Le calcul a échoué. Vérifiez le serveur et la connexion.');
   } finally {
-    button.disabled = false; button.querySelector('span').textContent = state.mode === 'family' ? 'Calculer mon itinéraire familial' : `Calculer mon itinéraire ${state.mode === 'vtt' ? 'VTT' : 'moto'}`;
+    button.disabled = state.mode === 'moto'; button.querySelector('span').textContent = state.mode === 'family' ? 'Calculer mon itinéraire familial' : state.mode === 'road' ? 'Calculer l’itinéraire rapide' : state.mode === 'moto' ? 'Circuit autorisé uniquement' : `Calculer mon itinéraire ${state.mode === 'vtt' ? 'VTT' : 'moto'}`;
   }
 }
 
@@ -523,18 +519,19 @@ function updateNavigation(position) {
   }
 }
 async function startNavigation() {
+  if (state.mode === 'moto') { toast('Navigation motocross limitée aux circuits privés ou explicitement autorisés.'); return; }
   if (!state.route) { toast('Calculez d’abord un itinéraire.'); return; }
   if (!navigator.geolocation) { toast('La géolocalisation n’est pas disponible sur cet appareil.'); return; }
   $('#nav-panel').classList.remove('hidden');
   document.body.classList.add('nav-active');
-  $('#map-mode-label').textContent = 'NAVIGATION ' + (state.mode === 'family' ? 'VÉLO FAMILIAL' : state.mode === 'vtt' ? 'VTT' : 'MOTOCROSS') + ' ACTIVE';
-  $('#nav-mode-pill').textContent = (state.mode === 'family' ? 'VÉLO FAMILIAL · GRAVEL MAX' : state.mode === 'vtt' ? 'VTT' : 'MOTOCROSS') + ' · GPS ACTIF';
-  $('#nav-rider-image').src = state.mode === 'family' ? 'assets/velo-familial.webp' : state.mode === 'vtt' ? 'assets/vtt-dynamique.webp' : 'assets/motocross-calme.webp';
+  $('#map-mode-label').textContent = 'NAVIGATION ' + (state.mode === 'family' ? 'VÉLO FAMILIAL' : state.mode === 'road' ? 'VÉLO DE ROUTE' : 'VTT') + ' ACTIVE';
+  $('#nav-mode-pill').textContent = (state.mode === 'family' ? 'VÉLO FAMILIAL · RAVeL' : state.mode === 'road' ? 'VÉLO DE ROUTE' : 'VTT') + ' · GPS ACTIF';
+  $('#nav-rider-image').src = state.mode === 'family' ? 'assets/velo-familial.webp' : state.mode === 'road' ? 'assets/velo-route.webp' : 'assets/vtt-dynamique.webp';
   state.distanceTravelledMeters = 0; state.movingDistanceMeters = 0; state.movingSeconds = 0;
   state.currentSpeedKmh = 0; state.previousGpsSample = null; state.routeStartDistanceTravelled = 0;
   state.lastSpokenStep = -1;
   if (state.mode === 'moto') announceStep(0);
-  else speakText(state.mode === 'family' ? 'Navigation vélo familial démarrée. Suivez la voie cyclable.' : 'Navigation VTT démarrée. Suivez le tracé.');
+  else speakText(state.mode === 'family' ? 'Navigation vélo familial démarrée. Suivez le RAVeL.' : state.mode === 'road' ? 'Navigation vélo de route démarrée. Suivez l’itinéraire rapide.' : 'Navigation VTT démarrée. Suivez le tracé.');
   if ('wakeLock' in navigator) {
     try { state.wakeLock = await navigator.wakeLock.request('screen'); }
     catch { toast('Le maintien de l’écran n’a pas été autorisé par l’appareil.'); }
@@ -551,7 +548,7 @@ async function stopNavigation() {
   document.body.classList.remove('nav-active');
   if (window.speechSynthesis) window.speechSynthesis.cancel();
   if (state.wakeLock) { try { await state.wakeLock.release(); } catch {} state.wakeLock = null; }
-  $('#nav-panel').classList.add('hidden'); $('#map-mode-label').textContent = state.mode === 'family' ? 'OSM · CHEMINS FACILES' : `OSM · ROUTE ${state.mode === 'vtt' ? 'VTT' : 'MOTO'}`;
+  $('#nav-panel').classList.add('hidden'); $('#map-mode-label').textContent = state.mode === 'family' ? 'OSM · RAVeL & CHEMINS' : state.mode === 'road' ? 'OSM · VÉLO DE ROUTE · RAPIDE' : state.mode === 'vtt' ? 'OSM · ROUTE VTT' : 'MOTOCROSS · CIRCUIT AUTORISÉ UNIQUEMENT';
   toast('Navigation terminée.');
 }
 
@@ -599,7 +596,7 @@ function centerMap() {
 }
 
 function setMode(mode) {
-  state.mode = mode === 'moto' ? 'moto' : mode === 'family' ? 'family' : 'vtt';
+  state.mode = ['family', 'road', 'vtt', 'moto'].includes(mode) ? mode : 'vtt';
   document.body.dataset.mode = state.mode;
   localStorage.setItem('ct_mode', state.mode);
   document.querySelectorAll('.mode-button').forEach(button => {
@@ -607,16 +604,19 @@ function setMode(mode) {
     button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active));
   });
   document.querySelectorAll('.moto-only').forEach(node => node.classList.toggle('hidden', state.mode !== 'moto'));
-  $('#favor-trails-row').classList.toggle('hidden', state.mode === 'family');
-  $('#sensation-row').classList.toggle('hidden', state.mode === 'family');
+  $('#favor-trails-row').classList.toggle('hidden', state.mode === 'family' || state.mode === 'road');
+  $('#sensation-row').classList.toggle('hidden', state.mode !== 'vtt' && state.mode !== 'moto');
   $('#seek-intense').checked = state.seekIntense;
-  $('#mode-hint').textContent = state.mode === 'family' ? 'RAVeL · PENTES DOUCES' : state.mode === 'vtt' ? state.seekIntense ? 'VTT · SENSATIONS' : 'VTT · CHEMINS' : state.seekIntense ? 'MOTO · SENSATIONS' : 'MOTO · VALHALLA';
+  $('#mode-hint').textContent = state.mode === 'family' ? 'RAVeL · PENTES DOUCES' : state.mode === 'road' ? 'ROUTES · RAPIDE' : state.mode === 'vtt' ? state.seekIntense ? 'VTT · SENSATIONS' : 'VTT · CHEMINS' : state.seekIntense ? 'MOTO · SENSATIONS' : 'MOTO · CIRCUIT AUTORISÉ';
   $('#routing-note').textContent = state.mode === 'family'
     ? 'Vélo familial : RAVeL balisés prioritaires; voies cyclables en bord de route fortement pénalisées. Les routes ne servent qu’aux raccordements nécessaires.'
-    : state.mode === 'vtt'
-      ? state.seekIntense ? 'VTT sensations : les chemins plus engagés sont favorisés, avec des détours acceptés.' : 'VTT : priorité forte aux sentiers et RAVeL; les routes de centre-ville sont pénalisées.'
-      : state.seekIntense ? 'Motocross sensations : pistes et chemins ouverts aux motos favorisés, avec des détours acceptés.' : 'Motocross : priorité aux pistes et chemins ouverts aux motos; respectez la signalisation et les accès.';
-  $('#route-button span').textContent = state.mode === 'family' ? 'Calculer mon itinéraire familial' : `Calculer mon itinéraire ${state.mode === 'vtt' ? 'VTT' : 'moto'}`;
+    : state.mode === 'road'
+      ? 'Vélo de route : itinéraire le plus rapide possible sur routes adaptées et pistes cyclables, avec préférence pour les surfaces roulantes.'
+      : state.mode === 'vtt'
+        ? state.seekIntense ? 'VTT sensations : les chemins plus engagés sont favorisés, avec des détours acceptés.' : 'VTT : priorité forte aux sentiers et RAVeL; les routes de centre-ville sont pénalisées.'
+        : 'Motocross : calcul désactivé sur les voies publiques et chemins non autorisés. Utilisez uniquement un circuit privé ou explicitement autorisé.';
+  $('#route-button').disabled = state.mode === 'moto';
+  $('#route-button span').textContent = state.mode === 'family' ? 'Calculer mon itinéraire familial' : state.mode === 'road' ? 'Calculer l’itinéraire rapide' : state.mode === 'moto' ? 'Circuit autorisé uniquement' : `Calculer mon itinéraire VTT`;
 }
 
 function beginMapPick(target) {
@@ -630,7 +630,7 @@ function beginMapPick(target) {
 function exportGpx() {
   if (!state.route?.path?.length) { toast('Calculez un itinéraire avant de l’exporter.'); return; }
   const points = state.route.path.map(([lat, lon]) => `    <trkpt lat="${lat.toFixed(6)}" lon="${lon.toFixed(6)}"></trkpt>`).join('\n');
-  const name = escapeHtml(`${state.mode === 'vtt' ? 'VTT' : 'Motocross'} - ${routeLabel()}`);
+  const name = escapeHtml(`${state.mode === 'family' ? 'Vélo familial' : state.mode === 'road' ? 'Vélo de route' : 'VTT'} - ${routeLabel()}`);
   const gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Cross Travel" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>${name}</name><trkseg>\n${points}\n  </trkseg></trk></gpx>`;
   const url = URL.createObjectURL(new Blob([gpx], {type: 'application/gpx+xml'}));
   const link = document.createElement('a'); link.href = url; link.download = 'cross-travel.gpx'; link.click();

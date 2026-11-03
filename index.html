@@ -18,7 +18,7 @@
       <a class="brand" href="#" aria-label="Cross Travel, accueil">
         <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M5 23 12 8h5l-4 8h8l-4 8h-5l3-5h-5l-2 4H5Zm13-15h9l-2 5h-4l-2 4h-5l4-9Z"/></svg></span>
         <span class="brand-name">CROSS<span>TRAVEL</span></span>
-        <span class="brand-cliparts" aria-hidden="true"><img class="brand-family" src="assets/velo-familial.webp" alt=""><img class="brand-vtt" src="assets/vtt-dynamique.webp" alt=""><img class="brand-moto" src="assets/motocross-calme.webp" alt=""></span>
+        <span class="brand-cliparts" aria-hidden="true"><img class="brand-family" src="assets/velo-familial.webp" alt=""><img class="brand-road" src="assets/velo-route.webp" alt=""><img class="brand-vtt" src="assets/vtt-dynamique.webp" alt=""><img class="brand-moto" src="assets/motocross-calme.webp" alt=""></span>
       </a>
       <div class="top-actions">
         <span class="online-status"><i></i><span id="connection-label">En ligne</span></span>
@@ -42,14 +42,14 @@
           </div>
           <div class="preferences">
             <div class="preferences-head"><span>Pratique</span><span class="preferences-hint" id="mode-hint">VTT · OSM</span></div>
-            <div class="mode-switch" role="group" aria-label="Type de pratique"><button type="button" class="mode-button" data-mode="family" aria-pressed="false"><img src="assets/velo-familial.webp" alt=""><span>Vélo familial<br><small>Chemins faciles</small></span></button><button type="button" class="mode-button active" data-mode="vtt" aria-pressed="true"><img src="assets/vtt-dynamique.webp" alt=""><span>VTT<br><small>Chemins & pistes</small></span></button><button type="button" class="mode-button" data-mode="moto" aria-pressed="false"><img src="assets/motocross-calme.webp" alt=""><span>Motocross<br><small>Cross</small></span></button></div>
+            <div class="mode-switch" role="group" aria-label="Type de pratique"><button type="button" class="mode-button" data-mode="family" aria-pressed="false"><img src="assets/velo-familial.webp" alt=""><span>Vélo familial<br><small>RAVeL & chemins</small></span></button><button type="button" class="mode-button" data-mode="road" aria-pressed="false"><img src="assets/velo-route.webp" alt=""><span>Vélo de route<br><small>Rapide & roulant</small></span></button><button type="button" class="mode-button active" data-mode="vtt" aria-pressed="true"><img src="assets/vtt-dynamique.webp" alt=""><span>VTT<br><small>Chemins & pistes</small></span></button><button type="button" class="mode-button" data-mode="moto" aria-pressed="false"><img src="assets/motocross-calme.webp" alt=""><span>Motocross<br><small>Circuit autorisé</small></span></button></div>
             <label class="check-row moto-only"><input type="checkbox" id="avoid-tolls" checked><span class="custom-check"></span><span>Éviter les péages</span></label>
             <label class="check-row" id="favor-trails-row"><input type="checkbox" id="favor-trails" checked><span class="custom-check"></span><span>Priorité aux chemins et pistes</span><span class="soon-tag">SELON ACCÈS</span></label>
             <label class="check-row hidden" id="sensation-row"><input type="checkbox" id="seek-intense"><span class="custom-check"></span><span>Parcours sensations</span><span class="soon-tag">DÉTOURS ACCEPTÉS</span></label>
             <p class="routing-note" id="routing-note">VTT : itinéraires cyclables, sentiers et pistes; les routes fréquentées sont pénalisées quand une alternative existe. Vérifiez le niveau technique et l’accès.</p>
           </div>
           <button class="primary-button" id="route-button"><span>Calculer mon itinéraire</span><svg viewBox="0 0 24 24"><path d="M5 12h13m-5-5 5 5-5 5"/></svg></button>
-          <p class="api-note" id="api-note"><span class="note-icon">i</span> Carte OpenStreetMap. Le calcul vélo privilégie les chemins cyclables; le profil motocross tient compte des accès motorisés connus. Un chemin autorisé aux vélos ne l’est pas forcément aux motos.</p>
+          <p class="api-note" id="api-note"><span class="note-icon">i</span> Carte OpenStreetMap. Le vélo de route privilégie un trajet rapide sur chaussée adaptée et pistes cyclables. Le mode motocross ne calcule pas d’itinéraire sur voies publiques; il est réservé aux circuits privés ou explicitement autorisés.</p>
         </div>
 
         <div class="route-result hidden" id="route-result">
