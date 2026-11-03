@@ -134,8 +134,8 @@ body.nav-active .leaflet-control-attribution{z-index:50}
 .mode-button img{width:36px}
 .mode-button[data-mode="family"] img{height:48px;width:39px;object-fit:cover;border-radius:5px}
 @media(max-width:680px){.mode-button{gap:3px;padding-inline:2px}.mode-button img{width:30px;height:47px}.mode-button[data-mode="family"] img{width:34px;height:43px}}
-.nav-secondary-metrics strong{font-size:clamp(20px,2.9vw,27px)}
-.nav-secondary-metrics small{font-size:9px}
+body.nav-active .nav-secondary-metrics strong{font-size:clamp(20px,2.9vw,27px)}
+body.nav-active .nav-secondary-metrics small{font-size:9px}
 @media(max-width:680px){
  body.nav-active .nav-secondary-metrics strong{font-size:clamp(16px,4.2vw,20px)}
  body.nav-active .nav-secondary-metrics small{font-size:7px;letter-spacing:.035em}
