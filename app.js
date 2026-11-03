@@ -345,12 +345,10 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
       const motoSensations = state.mode === 'moto' && state.seekIntense;
       const routeRequest = {
         locations: [{lat: origin.lat, lon: origin.lon, type: 'break'}, {lat: destination.lat, lon: destination.lon, type: 'break'}],
-        alternates: motoSensations ? 5 : 0,
+        alternates: state.mode === 'moto' ? 5 : 0,
         costing: state.mode === 'moto' ? 'motorcycle' : 'bicycle',
         costing_options: state.mode === 'moto'
-          ? {motorcycle: motoSensations
-            ? {use_highways: 0, use_trails: 1, use_tolls: $('#avoid-tolls').checked ? 0 : 0.5, use_living_streets: 0}
-            : {use_highways: 0, use_trails: 0.8, use_tolls: $('#avoid-tolls').checked ? 0 : 0.5, use_living_streets: 0}}
+          ? {motorcycle: {use_highways: 0, use_trails: 1, use_tracks: 1, use_tolls: $('#avoid-tolls').checked ? 0 : 0.5, use_living_streets: 0}}
           : {bicycle: {bicycle_type: 'road', cycling_speed: 25, use_roads: 1, use_hills: 1, use_ferry: 0.3, use_living_streets: 0, avoid_bad_surfaces: 0.85}},
         directions_options: {units: 'kilometers', language: 'fr-FR'},
         shape_format: 'geojson'
@@ -359,30 +357,33 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
       const response = await fetch(state.routeServer, {method: 'POST', headers: routeHeaders, body: JSON.stringify(routeRequest)});
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || payload.status_message || `Erreur du moteur Valhalla (${response.status}).`);
-      if (state.mode === 'moto' && state.seekIntense) {
+      if (state.mode === 'moto') {
         const variants = [payload.trip, ...(payload.alternates || []).map(alternative => alternative.trip || alternative)]
           .filter(trip => trip?.legs?.length);
         const scored = variants.map(trip => {
           let length = Number(trip.summary?.length) || 0;
-          let totalMeters = 0, roughMeters = 0, highwayMeters = 0;
+          let totalLength = 0, roughLength = 0, highwayLength = 0;
           for (const leg of trip.legs || []) {
             for (const maneuver of leg.maneuvers || []) {
               const segmentLength = Math.max(0, Number(maneuver.length) || 0);
-              totalMeters += segmentLength;
-              if (maneuver.rough) roughMeters += segmentLength;
-              if (maneuver.highway) highwayMeters += segmentLength;
+              totalLength += segmentLength;
+              if (maneuver.rough) roughLength += segmentLength;
+              if (maneuver.highway) highwayLength += segmentLength;
             }
           }
-          if (!length) length = totalMeters;
+          if (!length) length = totalLength;
           return {
             trip, length,
-            roughShare: totalMeters ? roughMeters / totalMeters : 0,
-            highwayShare: totalMeters ? highwayMeters / totalMeters : (trip.summary?.has_highway ? 1 : 0)
+            roughShare: totalLength ? roughLength / totalLength : 0,
+            highwayShare: totalLength ? highwayLength / totalLength : (trip.summary?.has_highway ? 1 : 0)
           };
         });
         const longest = Math.max(1, ...scored.map(item => item.length));
         scored.sort((a, b) => {
-          const score = item => item.roughShare * 3 - item.highwayShare * 5 + item.length / longest * 1.25;
+          const sensationMode = state.seekIntense;
+          const score = item => item.roughShare * (sensationMode ? 6 : 3)
+            - item.highwayShare * 12
+            + item.length / longest * (sensationMode ? 1.5 : 0.2);
           return score(b) - score(a);
         });
         if (scored.length) payload.trip = scored[0].trip;
