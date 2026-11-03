@@ -6,7 +6,7 @@ PWA en français pour préparer des itinéraires VTT et motocross/enduro sur une
 
 - Recherche assistée de lieux et adresses par Photon, avec suggestions pendant la saisie et choix de résultat sans adresse exacte.
 - Départ depuis le GPS, saisie d’un lieu ou choix manuel sur la carte; même choix pour l’arrivée.
-- Profil Vélo familial calculé sur le graphe des tronçons RAVeL explicitement cartographiés dans OpenStreetMap. Le graphe exclut les routes ordinaires, accroche les départs/arrivées à 1,2 km maximum et refuse le calcul si aucun trajet RAVeL continu n’existe.
+- Profil Vélo familial calculé sur le graphe des voies cyclables et des chemins explicitement accessibles aux vélos dans OpenStreetMap. Les routes ordinaires et surfaces plus rugueuses que le gravel sont exclues; seules les surfaces autorisées et renseignées sont intégrées. Départ/arrivée à 150 m maximum, sans raccord routier; le calcul échoue si aucun chemin continu compatible n’existe.
 - Profil VTT calculé par BRouter (`mtb`), profil dédié au mountain bike. L’option « Priorité aux chemins et pistes » augmente le coût des routes et renforce nettement la préférence pour les itinéraires cyclables répertoriés, dont les RAVeL quand ils sont correctement cartographiés.
 - Profil motocross/enduro calculé par Valhalla (`motorcycle`), avec `use_trails` et `use_tracks` au maximum et `use_highways` à zéro quand la priorité chemins est activée. Les accès moto connus dans OSM continuent de s’appliquer.
 - Affichage des distances en kilomètres (le `track-length` BRouter, renvoyé en mètres, est converti correctement), guidage GPS, recalcul après écart et favoris locaux.
@@ -22,7 +22,7 @@ La carte d’accueil et la navigation proposent le fond OpenStreetMap ou l’ima
 
 La recherche d’adresse utilise l’API Photon publique de Komoot avec une limite de résultats et un biais vers le centre de carte. Le service public peut limiter les requêtes et n’offre pas de garantie de disponibilité.
 
-Le profil familial demande à Overpass les relations et chemins nommés RAVeL dans la zone, puis calcule un plus court chemin uniquement sur ces tronçons vélo. Il ne construit pas de raccord par les rues; une recherche sans continuité ou avec un point éloigné du réseau échoue explicitement. Les résultats dépendent du marquage OpenStreetMap et du service Overpass public.
+Le profil familial demande à Overpass les voies cyclables et chemins explicitement accessibles aux vélos dans la zone. Le graphe ne retient que les tronçons dont la surface OSM est renseignée et ne dépasse pas gravel; il exclut toutes les routes ordinaires et les surfaces plus rugueuses. Départ et arrivée doivent être à 150 m maximum d’un chemin compatible. Un trajet sans continuité échoue plutôt que de passer par une route. Les données dépendent de la qualité du marquage OpenStreetMap et du service Overpass public.
 
 BRouter est appelé via `https://brouter.de/brouter` avec le profil `mtb` pour le VTT. Cross Travel augmente `path_preference` et `cycleroutes_pref` quand la priorité aux chemins est activée; cela peut favoriser les parcours RAVeL encodés comme itinéraires cyclables. Le profil `mtb` est distinct du profil `trekking` de randonnée à vélo. Le tracé dépend de la qualité des données OSM : il ne garantit ni l’ouverture actuelle, ni la praticabilité, ni l’adéquation du niveau technique.
 
