@@ -554,3 +554,6 @@ body{
 @keyframes arrival-intro-exit{to{opacity:0;transform:scale(1.12);visibility:hidden}}
 @media(max-width:600px){.arrival-intro__scene{width:100vw;height:min(570px,76vh);min-height:330px}.arrival-intro__brand{top:12%;gap:12px}.arrival-intro__mark{border-radius:18px}.arrival-intro__vehicles{inset:29% 1% 9%}.arrival-vehicle{width:clamp(76px,21vw,112px);height:clamp(98px,19vh,148px)}.arrival-vehicle--family{left:0;top:52%}.arrival-vehicle--road{left:24%;top:26%}.arrival-vehicle--vtt{left:50%;top:46%}.arrival-vehicle--moto{right:0;top:17%}.arrival-intro__track{inset:28% 0 9%;height:70%}.arrival-intro__caption{font-size:9px;letter-spacing:.12em}}
 @media(prefers-reduced-motion:reduce){.arrival-intro{animation-duration:.01ms;animation-delay:0s}.arrival-intro__brand,.arrival-vehicle,.arrival-intro__caption{animation-duration:.01ms;animation-delay:0s;opacity:1}.arrival-intro__track path{animation:none}}
+
+.route-result .start-button{height:58px;margin:12px 0 15px;padding-inline:20px;font-size:15px;box-shadow:0 8px 22px rgba(110,160,38,.2)}.route-result .start-button svg{width:23px;height:23px}
+@media(max-width:680px){.route-result .start-button{height:62px;font-size:16px;margin:10px 0 14px}}
