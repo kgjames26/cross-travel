@@ -11,7 +11,7 @@ const state = {
   familyFast: localStorage.getItem('ct_family_fast') === 'true',
   voiceEnabled: localStorage.getItem('ct_voice_enabled') !== 'false', lastSpokenStep: -1,
   distanceTravelledMeters: 0, movingDistanceMeters: 0, movingSeconds: 0,
-  currentSpeedKmh: 0, previousGpsSample: null, routeStartDistanceTravelled: 0, lastHeading: null, lastMapBearing: 0,
+  currentSpeedKmh: 0, previousGpsSample: null, routeStartDistanceTravelled: 0, lastHeading: null, lastMapBearing: 0, navigationHeading: null,
   searchTimers: {}, searchControllers: {}, suggestions: {origin: [], destination: []},
   saved: JSON.parse(localStorage.getItem('ct_saved_routes') || '[]')
 };
@@ -87,7 +87,6 @@ function useBasemap(style, announce = false) {
   if (announce) toast(nextStyle === 'satellite' ? 'Imagerie satellite activée.' : 'Satellite indisponible : retour à la carte OSM.');
 }
 function updateMapBearing(position) {
-  if (typeof state.map?.setBearing !== 'function') return;
   const reported = position.coords.heading;
   let heading = typeof reported === "number" && Number.isFinite(reported) && reported >= 0 ? reported : null;
   if (heading === null && state.previousGpsSample && state.currentSpeedKmh >= 3) {
@@ -97,7 +96,8 @@ function updateMapBearing(position) {
     const x = Math.cos(a.lat * radians) * Math.sin(b.lat * radians) - Math.sin(a.lat * radians) * Math.cos(b.lat * radians) * Math.cos((b.lon - a.lon) * radians);
     heading = (Math.atan2(y, x) / radians + 360) % 360;
   }
-  if (heading === null || state.currentSpeedKmh < 1.5) return;
+  if (heading !== null) state.navigationHeading = heading;
+  if (heading === null || state.currentSpeedKmh < 1.5 || typeof state.map?.setBearing !== 'function') return;
   const difference = ((heading - state.lastMapBearing + 540) % 360) - 180;
   if (Math.abs(difference) < 4) return;
   state.lastMapBearing = (state.lastMapBearing + difference * 0.35 + 360) % 360;
@@ -487,6 +487,15 @@ function toggleVoice() {
   }
 }
 
+function offsetPointMeters(origin, distanceMeters, bearingDegrees) {
+  const radius = 6371000, bearing = bearingDegrees * Math.PI / 180;
+  const lat1 = origin.lat * Math.PI / 180, lon1 = origin.lon * Math.PI / 180;
+  const angularDistance = distanceMeters / radius;
+  const lat2 = Math.asin(Math.sin(lat1) * Math.cos(angularDistance) + Math.cos(lat1) * Math.sin(angularDistance) * Math.cos(bearing));
+  const lon2 = lon1 + Math.atan2(Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(lat1), Math.cos(angularDistance) - Math.sin(lat1) * Math.sin(lat2));
+  return [lat2 * 180 / Math.PI, lon2 * 180 / Math.PI];
+}
+
 function updateNavigation(position) {
   if (!state.route || !state.map) return;
   const point = {lat: position.coords.latitude, lon: position.coords.longitude};
@@ -543,8 +552,19 @@ function updateNavigation(position) {
     ? new Date(sampleTime + remainingMeters / (averageSpeed / 3.6) * 1000).toLocaleTimeString('fr-BE', {hour: '2-digit', minute: '2-digit'})
     : remainingMeters === 0 ? 'Arrivée' : 'Calcul en cours';
   $('#nav-gps-status').textContent = (state.currentSpeedKmh >= 1.5 ? 'En mouvement' : 'À l’arrêt') + ' · GPS ±' + Math.round(accuracy) + ' m';
-  if (state.navigationMarker) state.navigationMarker.setLatLng([point.lat, point.lon]);
-  else state.navigationMarker = L.circleMarker([point.lat, point.lon], {radius: 8, color: '#fff', weight: 3, fillColor: '#86b83e', fillOpacity: 1}).addTo(state.map);
+  const arrowHeading = state.navigationHeading ?? state.lastMapBearing;
+  const arrowPoints = [
+    offsetPointMeters(point, 20, arrowHeading),
+    offsetPointMeters(point, 11, arrowHeading + 145),
+    offsetPointMeters(point, 11, arrowHeading + 215)
+  ];
+  const arrowStyle = {
+    color: '#fff', weight: 3,
+    fillColor: getComputedStyle(document.body).getPropertyValue('--mode-accent').trim() || '#86b83e',
+    fillOpacity: .98, opacity: 1, interactive: false
+  };
+  if (state.navigationMarker) state.navigationMarker.setLatLngs(arrowPoints);
+  else state.navigationMarker = L.polygon(arrowPoints, arrowStyle).addTo(state.map);
   if (state.map.getZoom() < 17) state.map.setZoom(18, {animate: false});
   state.map.panTo([point.lat, point.lon], {animate: false});
   const now = Date.now();
@@ -567,7 +587,7 @@ async function startNavigation() {
   $('#nav-mode-pill').textContent = (state.mode === 'family' ? state.familyFast ? 'VÉLO FAMILIAL · RAPIDE' : 'VÉLO FAMILIAL · RAVeL' : state.mode === 'road' ? 'VÉLO DE ROUTE' : state.mode === 'moto' ? 'MOTOCROSS · PETITES ROUTES' : 'VTT') + ' · GPS ACTIF';
   $('#nav-rider-image').src = state.mode === 'family' ? 'assets/velo-familial.webp' : state.mode === 'road' ? 'assets/velo-route.webp' : state.mode === 'moto' ? 'assets/motocross-calme.webp' : 'assets/vtt-dynamique.webp';
   state.distanceTravelledMeters = 0; state.movingDistanceMeters = 0; state.movingSeconds = 0;
-  state.currentSpeedKmh = 0; state.previousGpsSample = null; state.routeStartDistanceTravelled = 0;
+  state.currentSpeedKmh = 0; state.previousGpsSample = null; state.routeStartDistanceTravelled = 0; state.navigationHeading = null;
   state.lastSpokenStep = -1;
   if (state.mode === 'moto') announceStep(0);
   else speakText(state.mode === 'family' ? state.familyFast ? 'Navigation vélo familial rapide démarrée. Suivez l’itinéraire.' : 'Navigation vélo familial démarrée. Suivez le RAVeL.' : state.mode === 'road' ? 'Navigation vélo de route démarrée. Suivez l’itinéraire rapide.' : 'Navigation VTT démarrée. Suivez le tracé.');
