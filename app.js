@@ -7,6 +7,7 @@ const state = {
   lastPosition: null, navigationMarker: null, rerouting: false, lastRerouteAt: 0,
   lastGeocodeAt: 0, routeServer: localStorage.getItem('ct_route_server') || DEFAULT_ROUTER,
   mode: localStorage.getItem('ct_mode') || 'vtt', mapPickTarget: null,
+  voiceEnabled: localStorage.getItem('ct_voice_enabled') !== 'false', lastSpokenStep: -1,
   searchTimers: {}, searchControllers: {}, suggestions: {origin: [], destination: []},
   saved: JSON.parse(localStorage.getItem('ct_saved_routes') || '[]')
 };
@@ -240,6 +241,7 @@ async function requestBRouter(origin, destination) {
     lonlats: `${origin.lon},${origin.lat}|${destination.lon},${destination.lat}`,
     profile: 'mtb', alternativeidx: '0', format: 'geojson',
     'profile:path_preference': $('#favor-trails').checked ? '40' : '20',
+    'profile:cycleroutes_pref': $('#favor-trails').checked ? '3.0' : '0.2',
     'profile:avoid_unsafe': '1'
   });
   const response = await fetch(`${BROUTER_URL}?${params}`);
@@ -282,6 +284,7 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
       state.route = normalizeValhalla(payload);
     }
     state.currentStep = 0;
+    state.lastSpokenStep = -1;
     drawRoute(); showRoute();
     $('#map-mode-label').textContent = state.mode === 'vtt' ? 'OSM · BROUTER · PROFIL VTT' : 'OSM · VALHALLA · PROFIL MOTO';
     $('#route-alert-text').textContent = state.mode === 'vtt'
@@ -289,6 +292,10 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
       : 'Profil moto Valhalla en bêta. Les chemins accessibles aux VTT peuvent être interdits aux motos : vérifiez la signalisation et l’autorisation réelle.';
     const wikilocQuery = encodeURIComponent(`${$('#origin-input').value} ${$('#destination-input').value} ${state.mode === 'vtt' ? 'VTT' : 'enduro motocross'}`);
     $('#wikiloc-link').href = `https://www.wikiloc.com/search?query=${wikilocQuery}`;
+    if (state.watchId !== null) {
+      if (state.mode === 'moto') announceStep(0);
+      else speakText('Parcours VTT recalculé. Suivez le nouveau tracé.');
+    }
     if (fromOverride) toast('Itinéraire recalculé depuis votre position.');
   } catch (error) {
     toast(error.message || 'Le calcul a échoué. Vérifiez le serveur et la connexion.');
@@ -328,6 +335,46 @@ function currentStep() {
   return steps[Math.min(state.currentStep, Math.max(steps.length - 1, 0))];
 }
 
+function speakText(message) {
+  if (!state.voiceEnabled || !message) return;
+  if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(message);
+  utterance.lang = 'fr-FR'; utterance.rate = 0.96; utterance.pitch = 1; utterance.volume = 1;
+  const voice = window.speechSynthesis.getVoices().find(item => item.lang?.toLowerCase().startsWith('fr'));
+  if (voice) utterance.voice = voice;
+  window.speechSynthesis.speak(utterance);
+}
+
+function announceStep(index) {
+  if (index < 0 || index === state.lastSpokenStep) return;
+  const step = state.route?.legs?.[0]?.steps?.[index];
+  if (!step?.instructions) return;
+  state.lastSpokenStep = index;
+  speakText(step.instructions);
+}
+
+function updateVoiceButton() {
+  const button = $('#voice-toggle');
+  button.textContent = state.voiceEnabled ? 'Voix activée' : 'Voix coupée';
+  button.setAttribute('aria-pressed', String(state.voiceEnabled));
+  button.setAttribute('aria-label', state.voiceEnabled ? 'Couper le guidage vocal' : 'Activer le guidage vocal');
+}
+
+function toggleVoice() {
+  if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+    toast('La synthèse vocale n’est pas disponible dans ce navigateur.'); return;
+  }
+  state.voiceEnabled = !state.voiceEnabled;
+  localStorage.setItem('ct_voice_enabled', String(state.voiceEnabled));
+  if (!state.voiceEnabled) window.speechSynthesis.cancel();
+  updateVoiceButton();
+  if (state.voiceEnabled && state.watchId !== null) {
+    state.lastSpokenStep = -1;
+    speakText('Guidage vocal activé.');
+  }
+}
+
 function updateNavigation(position) {
   if (!state.route || !state.map) return;
   const point = {lat: position.coords.latitude, lon: position.coords.longitude};
@@ -336,6 +383,8 @@ function updateNavigation(position) {
   let step = currentStep();
   if (!step) return;
   let distance = state.map.distance([point.lat, point.lon], [step.endLocation.lat, step.endLocation.lon]);
+  const announcementIndex = state.mode === 'vtt' ? state.currentStep : state.currentStep + 1;
+  if (distance <= 150) announceStep(announcementIndex);
   if (distance < 35 && state.currentStep < steps.length - 1) { state.currentStep++; step = currentStep(); distance = state.map.distance([point.lat, point.lon], [step.endLocation.lat, step.endLocation.lon]); }
   $('#nav-instruction').textContent = step.instructions;
   $('#nav-distance').textContent = `${formatDistance(distance)} avant la prochaine étape`;
@@ -364,6 +413,9 @@ async function startNavigation() {
   if (!navigator.geolocation) { toast('La géolocalisation n’est pas disponible sur cet appareil.'); return; }
   $('#nav-panel').classList.remove('hidden');
   $('#map-mode-label').textContent = `NAVIGATION ${state.mode === 'vtt' ? 'VTT' : 'MOTO'} ACTIVE`;
+  state.lastSpokenStep = -1;
+  if (state.mode === 'moto') announceStep(0);
+  else speakText('Navigation VTT démarrée. Suivez le tracé.');
   if ('wakeLock' in navigator) {
     try { state.wakeLock = await navigator.wakeLock.request('screen'); }
     catch { toast('Le maintien de l’écran n’a pas été autorisé par l’appareil.'); }
@@ -375,6 +427,7 @@ async function startNavigation() {
 async function stopNavigation() {
   if (state.watchId !== null) navigator.geolocation.clearWatch(state.watchId);
   state.watchId = null;
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
   if (state.wakeLock) { try { await state.wakeLock.release(); } catch {} state.wakeLock = null; }
   $('#nav-panel').classList.add('hidden'); $('#map-mode-label').textContent = `OSM · ROUTE ${state.mode === 'vtt' ? 'VTT' : 'MOTO'}`;
   toast('Navigation terminée.');
@@ -433,7 +486,7 @@ function setMode(mode) {
   document.querySelectorAll('.moto-only').forEach(node => node.classList.toggle('hidden', state.mode !== 'moto'));
   $('#mode-hint').textContent = state.mode === 'vtt' ? 'VTT · MTB' : 'MOTO · VALHALLA';
   $('#routing-note').textContent = state.mode === 'vtt'
-    ? 'BRouter MTB augmente fortement le coût des routes et privilégie pistes/sentiers selon OSM. Vérifiez le niveau technique et l’accès.'
+    ? 'BRouter MTB privilégie les sentiers et itinéraires cyclables OSM, dont les RAVeL, et augmente le coût des routes. Vérifiez le niveau et l’accès.'
     : 'Valhalla favorise au maximum pistes et chemins accessibles aux motos, et pénalise les grands axes. Les données OSM peuvent être incomplètes.';
   $('#route-button span').textContent = `Calculer mon itinéraire ${state.mode === 'vtt' ? 'VTT' : 'moto'}`;
 }
@@ -476,6 +529,7 @@ $('#use-location').addEventListener('click', useCurrentLocation);
 $('#center-map').addEventListener('click', centerMap);
 $('#start-navigation').addEventListener('click', startNavigation);
 $('#stop-navigation').addEventListener('click', stopNavigation);
+$('#voice-toggle').addEventListener('click', toggleVoice);
 $('#save-route').addEventListener('click', saveRoute);
 $('#saved-open').addEventListener('click', () => openModal('saved-modal'));
 $('#saved-open-2').addEventListener('click', () => openModal('saved-modal'));
@@ -497,5 +551,6 @@ document.addEventListener('visibilitychange', async () => {
 
 renderSaved();
 setMode(state.mode);
+updateVoiceButton();
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
 initializeMap();
