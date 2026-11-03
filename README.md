@@ -1,30 +1,39 @@
 # Cross Travel
 
-PWA en français pour préparer et suivre des itinéraires moto sur une carte OpenStreetMap.
+PWA en français pour préparer des itinéraires VTT et motocross/enduro sur une carte OpenStreetMap.
 
-## Carte et données
+## Fonctionnalités
 
-- La carte utilise Leaflet et les tuiles standards `https://tile.openstreetmap.org/{z}/{x}/{y}.png`.
-- L’attribution « © OpenStreetMap contributors » reste visible sur la carte.
-- Les tuiles ne sont pas préchargées ni mises en cache par le service worker. Les tuiles standards OSM ne sont pas fournies pour les téléchargements hors ligne; la carte demande une connexion.
-- La recherche d’adresses utilise Nominatim au moment du calcul uniquement, sans autocomplétion pendant la saisie, avec une pause entre requêtes.
+- Recherche assistée de lieux et adresses par Photon, avec suggestions pendant la saisie et choix de résultat sans adresse exacte.
+- Départ depuis le GPS, saisie d’un lieu ou choix manuel sur la carte; même choix pour l’arrivée.
+- Profil VTT calculé par BRouter (profil `trekking`) pour privilégier les pistes, chemins et voies cyclables présents dans OSM.
+- Profil motocross/enduro calculé par Valhalla (`motorcycle`), avec réglages pour éviter les grands axes et favoriser les voies adaptées aux véhicules motorisés selon les attributs OSM.
+- Affichage du tracé, guidage GPS, recalcul après écart, favoris locaux et maintien de l’écran si le navigateur autorise Wake Lock.
+- Export du tracé en GPX pour import manuel dans OsmAnd; lien vers Wikiloc pour la recherche externe de traces.
+- Interface installable comme PWA.
 
-## Calcul et navigation
+## Sources de données et limites
 
-Le calcul utilise le moteur de routage Valhalla avec le profil moto `motorcycle`. Le réglage « Favoriser pistes et chemins » ajuste `use_trails`; « Éviter les grands axes » ajuste `use_highways`. Le moteur respecte les règles d’accès présentes dans les données OpenStreetMap, mais le profil moto est en bêta et la base peut être incomplète ou ancienne. Aucun moteur ne peut garantir que le terrain, la signalisation ou une autorisation locale correspondent aux données. Vérifiez le passage avant de vous engager. Les chemins autorisés aux vélos ne sont pas automatiquement autorisés aux motos.
+La carte est dessinée avec Leaflet et les tuiles standards `https://tile.openstreetmap.org/{z}/{x}/{y}.png`; l’attribution OpenStreetMap reste visible. Les tuiles et les services de calcul nécessitent une connexion et ne sont pas téléchargés pour l’usage hors ligne.
 
-Le serveur public par défaut est `https://valhalla1.openstreetmap.de/route`. Il est fourni sans engagement de disponibilité ni de capacité. Pour un usage régulier ou public, configurez une instance Valhalla que vous contrôlez ou un fournisseur adapté. L’adresse du moteur peut être remplacée dans **Paramètres**.
+La recherche d’adresse utilise l’API Photon publique de Komoot avec une limite de résultats et un biais vers le centre de carte. Le service public peut limiter les requêtes et n’offre pas de garantie de disponibilité.
 
-La recherche d’adresse appelle le service public Nominatim. Elle se déclenche uniquement lors du calcul et respecte une cadence faible; ses règles d’usage et limites peuvent évoluer.
+BRouter est appelé via `https://brouter.de/brouter` avec le profil `trekking` pour le VTT. Le profil et les cartes sont basés sur OSM et ne garantissent pas qu’un passage soit praticable ou ouvert à la date de sortie.
 
-Fonctions incluses : choix des points par adresse, position GPS ou clic sur carte; calcul et affichage de route; instructions en direct; recalcul après écart; écran allumé si le navigateur permet Wake Lock; favoris stockés localement; interface installable comme PWA.
+Le calcul motocross/enduro utilise Valhalla et le profil moto. Le réglage pistes ajuste les préférences du moteur; le profil doit respecter les accès motorisés connus dans les données OSM. Un chemin autorisé aux vélos, un RAVeL ou un sentier forestier n’est pas automatiquement autorisé aux motos. Cross Travel n’ajoute pas volontairement de voies interdites aux véhicules motorisés. Vérifiez les panneaux, arrêtés, autorisations privées et conditions sur place.
+
+Wikiloc ne fournit pas d’API publique d’import de traces à l’application : le lien ouvre sa recherche dans un nouvel onglet. L’export GPX sert à importer le parcours dans OsmAnd (ou une application compatible). OsmAnd n’est pas lancé automatiquement par le site.
+
+Les indications de guidage se basent sur les manœuvres envoyées par Valhalla. Le profil BRouter renvoie une géométrie de parcours; le guidage VTT de cette version affiche une instruction de suivi du tracé et la progression GPS, sans annonces détaillées de chaque virage.
+
+## Configuration
+
+Le serveur Valhalla par défaut est `https://valhalla1.openstreetmap.de/route`. Il est fourni sans garantie de disponibilité ou de capacité. L’adresse peut être remplacée dans **Paramètres**. BRouter et Photon utilisent leurs services publics par défaut.
+
+Les favoris et les préférences de mode restent dans le stockage local du navigateur. Les requêtes transmettent les lieux recherchés à Photon et les coordonnées choisies au moteur de calcul correspondant.
 
 ## Lancer et publier
 
-Application statique sans compilation. Pour le développement local, servez le dossier sur `localhost`; les fonctions PWA et GPS demandent HTTPS (ou `localhost`). Le workflow `.github/workflows/pages.yml` publie le site sur GitHub Pages après activation de **Settings → Pages → Build and deployment → GitHub Actions**.
+Application statique sans compilation. Pour le développement local, servez le dossier sur `localhost`; le GPS, Wake Lock et les fonctionnalités PWA demandent HTTPS (ou `localhost`). Le workflow `.github/workflows/pages.yml` publie le site sur GitHub Pages après activation de **Settings → Pages → Build and deployment → GitHub Actions**.
 
-Les fichiers de l’application sont servis depuis GitHub Pages. Leaflet, les tuiles OSM, Nominatim et Valhalla sont des services externes; la carte et le calcul nécessitent une connexion. Le service worker met en cache uniquement l’interface Cross Travel.
-
-## Vie privée et prudence
-
-Les favoris et la configuration du moteur restent dans le stockage local du navigateur. Les coordonnées nécessaires à la recherche et au calcul sont envoyées à Nominatim et au serveur Valhalla configuré. Ne manipulez pas l’écran en roulant.
+Ne manipulez pas l’écran en roulant. Le GPS, le maintien de l’écran et la réception des données dépendent du téléphone, du navigateur, du réseau et de la batterie.

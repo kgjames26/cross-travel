@@ -1,10 +1,13 @@
 const $ = (selector) => document.querySelector(selector);
 const DEFAULT_ROUTER = 'https://valhalla1.openstreetmap.de/route';
+const BROUTER_URL = 'https://brouter.de/brouter';
 const state = {
   map: null, tileLayer: null, route: null, routeLayer: null, stepLayers: [], markers: [],
   origin: null, destination: null, currentStep: 0, watchId: null, wakeLock: null,
   lastPosition: null, navigationMarker: null, rerouting: false, lastRerouteAt: 0,
   lastGeocodeAt: 0, routeServer: localStorage.getItem('ct_route_server') || DEFAULT_ROUTER,
+  mode: localStorage.getItem('ct_mode') || 'vtt', mapPickTarget: null,
+  searchTimers: {}, searchControllers: {}, suggestions: {origin: [], destination: []},
   saved: JSON.parse(localStorage.getItem('ct_saved_routes') || '[]')
 };
 
@@ -29,6 +32,23 @@ function formatDuration(seconds) {
 }
 function toMeters(kilometers) { return Number(kilometers || 0) * 1000; }
 function routeLabel() { return `${$('#origin-input').value.trim()} → ${$('#destination-input').value.trim()}`; }
+function setPoint(which, point, label) {
+  state[which] = {lat: Number(point.lat), lon: Number(point.lon)};
+  $(`#${which}-input`).value = label || 'Point choisi sur la carte';
+  closeSuggestions(which);
+  if (state.map) {
+    state.markers = state.markers.filter(marker => { state.map.removeLayer(marker); return false; });
+    for (const [key, color] of [['origin', '#80a943'], ['destination', '#252e29']]) {
+      const selected = state[key];
+      if (selected) state.markers.push(L.circleMarker([selected.lat, selected.lon], {radius: 7, color: '#fff', weight: 3, fillColor: color, fillOpacity: 1}).addTo(state.map));
+    }
+  }
+}
+
+function closeSuggestions(which) {
+  const list = $(`#${which}-suggestions`);
+  list.classList.add('hidden'); list.replaceChildren(); state.suggestions[which] = [];
+}
 
 function initializeMap() {
   if (state.map) { state.map.invalidateSize(); return true; }
@@ -44,40 +64,78 @@ function initializeMap() {
   state.tileLayer.on('tileerror', () => toast('Certaines tuiles OSM ne sont pas disponibles pour le moment.'));
   state.map.on('click', event => {
     const point = {lat: event.latlng.lat, lon: event.latlng.lng};
-    if (!state.origin) {
-      state.origin = point; $('#origin-input').value = 'Point choisi sur la carte';
-      toast('Départ choisi. Touchez la carte pour choisir l’arrivée.');
-    } else if (!state.destination) {
-      state.destination = point; $('#destination-input').value = 'Point choisi sur la carte';
-      toast('Arrivée choisie. Lancez le calcul.');
-    } else {
-      state.destination = point; $('#destination-input').value = 'Point choisi sur la carte';
-      toast('Point d’arrivée déplacé.');
-    }
+    const target = state.mapPickTarget || (!state.origin ? 'origin' : 'destination');
+    setPoint(target, point);
+    if (state.mapPickTarget) { state.mapPickTarget = null; $('#map-pick-hint').classList.add('hidden'); toast(`${target === 'origin' ? 'Départ' : 'Arrivée'} placé sur la carte.`); }
+    else toast(`${target === 'origin' ? 'Départ' : 'Arrivée'} placé. Utilisez ⌖ pour choisir précisément chaque point.`);
   });
   requestAnimationFrame(() => state.map.invalidateSize());
   return true;
 }
 
-async function geocodeAddress(query) {
-  const wait = Math.max(0, 1100 - (Date.now() - state.lastGeocodeAt));
-  if (wait) await new Promise(resolve => setTimeout(resolve, wait));
-  const params = new URLSearchParams({q: query, format: 'jsonv2', limit: '1', 'accept-language': 'fr'});
-  state.lastGeocodeAt = Date.now();
-  const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`);
-  if (!response.ok) throw new Error(`Recherche OSM indisponible (${response.status}).`);
-  const results = await response.json();
-  if (!results.length) throw new Error(`Adresse introuvable : ${query}`);
-  return {lat: Number(results[0].lat), lon: Number(results[0].lon), label: results[0].display_name};
+function photonLabel(feature) {
+  const p = feature.properties || {};
+  return [p.name, p.street && [p.housenumber, p.street].filter(Boolean).join(' '), p.postcode, p.city || p.town || p.village || p.county, p.country].filter(Boolean).filter((value, index, all) => all.indexOf(value) === index).join(', ');
+}
+
+async function searchAddresses(query, mapCenter = true, signal) {
+  const params = new URLSearchParams({q: query, limit: '6', lang: 'fr'});
+  if (mapCenter && state.map) {
+    const center = state.map.getCenter();
+    params.set('lat', String(center.lat)); params.set('lon', String(center.lng)); params.set('zoom', String(state.map.getZoom()));
+  }
+  params.set('countrycode', 'be');
+  const response = await fetch(`https://photon.komoot.io/api/?${params}`, {signal, headers: {'Accept': 'application/json'}});
+  if (!response.ok) throw new Error(`Recherche d’adresse indisponible (${response.status}).`);
+  return (await response.json()).features || [];
+}
+
+function renderSuggestions(which, features) {
+  const list = $(`#${which}-suggestions`); state.suggestions[which] = features;
+  list.innerHTML = features.map((feature, index) => `<button type="button" class="suggestion-option" role="option" data-suggestion="${index}"><strong>${escapeHtml(photonLabel(feature) || 'Lieu sans nom')}</strong><span>${escapeHtml([feature.properties?.type, feature.properties?.country].filter(Boolean).join(' · '))}</span></button>`).join('');
+  list.classList.toggle('hidden', features.length === 0);
+  list.querySelectorAll('[data-suggestion]').forEach(button => button.addEventListener('mousedown', event => event.preventDefault()));
+  list.querySelectorAll('[data-suggestion]').forEach(button => button.addEventListener('click', () => {
+    const chosen = state.suggestions[which][Number(button.dataset.suggestion)];
+    if (!chosen) return;
+    const [lon, lat] = chosen.geometry.coordinates;
+    setPoint(which, {lat, lon}, photonLabel(chosen));
+    if (state.map) state.map.setView([lat, lon], 15);
+  }));
+}
+
+function attachAddressSearch(which) {
+  const input = $(`#${which}-input`);
+  input.addEventListener('input', () => {
+    state[which] = null;
+    clearTimeout(state.searchTimers[which]);
+    state.searchControllers[which]?.abort();
+    const query = input.value.trim();
+    if (query.length < 3) { closeSuggestions(which); return; }
+    state.searchTimers[which] = setTimeout(async () => {
+      const controller = new AbortController(); state.searchControllers[which] = controller;
+      try { renderSuggestions(which, await searchAddresses(query, true, controller.signal)); }
+      catch (error) { if (error.name !== 'AbortError') closeSuggestions(which); }
+    }, 300);
+  });
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Escape') closeSuggestions(which);
+    if (event.key === 'Enter' && state.suggestions[which].length) {
+      event.preventDefault(); $(`#${which}-suggestions [data-suggestion="0"]`)?.click();
+    }
+  });
+  input.addEventListener('blur', () => setTimeout(() => closeSuggestions(which), 150));
 }
 
 async function resolvePoint(input, point) {
   if (point) return point;
   const query = input.value.trim();
   if (!query) throw new Error('Renseignez le départ et l’arrivée.');
-  const result = await geocodeAddress(query);
-  input.value = result.label;
-  return {lat: result.lat, lon: result.lon};
+  const results = await searchAddresses(query, true);
+  if (!results.length) throw new Error(`Lieu introuvable : ${query}. Choisissez une suggestion ou un point sur la carte.`);
+  const feature = results[0], [lon, lat] = feature.geometry.coordinates;
+  input.value = photonLabel(feature);
+  return {lat, lon};
 }
 
 function decodePolyline(encoded, precision = 6) {
@@ -126,6 +184,35 @@ function normalizeValhalla(payload) {
   };
 }
 
+function normalizeBRouter(payload) {
+  const feature = payload.features?.find(item => item.geometry?.type === 'LineString');
+  if (!feature) throw new Error(payload.error || 'BRouter n’a pas trouvé de parcours VTT pour ces points.');
+  const path = parseShape(feature.geometry);
+  if (path.length < 2) throw new Error('BRouter n’a pas renvoyé de tracé exploitable.');
+  let distanceMeters = 0;
+  for (let i = 1; i < path.length; i++) distanceMeters += L.latLng(path[i - 1]).distanceTo(L.latLng(path[i]));
+  const props = feature.properties || {};
+  if (Number(props['track-length']) > 0) distanceMeters = Number(props['track-length']) * 1000;
+  const durationSeconds = Number(props['total-time']) > 0 ? Number(props['total-time']) : distanceMeters / 1000 / 12 * 3600;
+  return {
+    path, distanceMeters, durationSeconds,
+    legs: [{steps: [{instructions: 'Suivez le tracé VTT vers l’arrivée', distanceMeters, endLocation: {lat: path.at(-1)[0], lon: path.at(-1)[1]}, path}]}]
+  };
+}
+
+async function requestBRouter(origin, destination) {
+  const params = new URLSearchParams({
+    lonlats: `${origin.lon},${origin.lat}|${destination.lon},${destination.lat}`,
+    profile: 'trekking', alternativeidx: '0', format: 'geojson'
+  });
+  const response = await fetch(`${BROUTER_URL}?${params}`);
+  const text = await response.text();
+  let payload;
+  try { payload = JSON.parse(text); } catch { payload = {}; }
+  if (!response.ok) throw new Error(payload.error || `Erreur du moteur BRouter (${response.status}).`);
+  return normalizeBRouter(payload);
+}
+
 async function calculateRoute(fromOverride = null, toOverride = null) {
   const button = $('#route-button'); button.disabled = true;
   button.querySelector('span').textContent = 'Calcul en cours…';
@@ -134,31 +221,40 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
     const origin = fromOverride || await resolvePoint($('#origin-input'), state.origin);
     const destination = toOverride || await resolvePoint($('#destination-input'), state.destination);
     state.origin = origin; state.destination = destination;
-    const trailPreference = $('#favor-trails').checked ? 0.82 : 0.05;
-    const highwayPreference = $('#avoid-highways').checked ? 0.08 : 0.5;
-    const tollPreference = $('#avoid-tolls').checked ? 0 : 0.5;
-    const response = await fetch(state.routeServer, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json', 'X-Client-Id': 'cross-travel (github.com/kgjames26/cross-travel)'},
-      body: JSON.stringify({
-        locations: [{lat: origin.lat, lon: origin.lon, type: 'break'}, {lat: destination.lat, lon: destination.lon, type: 'break'}],
-        costing: 'motorcycle',
-        costing_options: {motorcycle: {use_highways: highwayPreference, use_trails: trailPreference, use_tolls: tollPreference}},
-        directions_options: {units: 'kilometers', language: 'fr-FR'},
-        shape_format: 'geojson'
-      })
-    });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || payload.status_message || `Erreur du moteur Valhalla (${response.status}).`);
-    state.route = normalizeValhalla(payload);
+    if (state.mode === 'vtt') {
+      state.route = await requestBRouter(origin, destination);
+    } else {
+      const trailPreference = $('#favor-trails').checked ? 0.82 : 0.05;
+      const highwayPreference = $('#avoid-highways').checked ? 0.08 : 0.5;
+      const tollPreference = $('#avoid-tolls').checked ? 0 : 0.5;
+      const response = await fetch(state.routeServer, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-Client-Id': 'cross-travel (github.com/kgjames26/cross-travel)'},
+        body: JSON.stringify({
+          locations: [{lat: origin.lat, lon: origin.lon, type: 'break'}, {lat: destination.lat, lon: destination.lon, type: 'break'}],
+          costing: 'motorcycle',
+          costing_options: {motorcycle: {use_highways: highwayPreference, use_trails: trailPreference, use_tolls: tollPreference}},
+          directions_options: {units: 'kilometers', language: 'fr-FR'},
+          shape_format: 'geojson'
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || payload.status_message || `Erreur du moteur Valhalla (${response.status}).`);
+      state.route = normalizeValhalla(payload);
+    }
     state.currentStep = 0;
     drawRoute(); showRoute();
-    $('#map-mode-label').textContent = 'OSM · PROFIL MOTO · PISTES FAVORISÉES';
+    $('#map-mode-label').textContent = state.mode === 'vtt' ? 'OSM · BROUTER · PROFIL VTT' : 'OSM · VALHALLA · PROFIL MOTO';
+    $('#route-alert-text').textContent = state.mode === 'vtt'
+      ? 'Profil vélo BRouter. Il privilégie les voies cyclables et chemins, mais les données et permissions locales restent à vérifier.'
+      : 'Profil moto Valhalla en bêta. Les chemins accessibles aux VTT peuvent être interdits aux motos : vérifiez la signalisation et l’autorisation réelle.';
+    const wikilocQuery = encodeURIComponent(`${$('#origin-input').value} ${$('#destination-input').value} ${state.mode === 'vtt' ? 'VTT' : 'enduro motocross'}`);
+    $('#wikiloc-link').href = `https://www.wikiloc.com/search?query=${wikilocQuery}`;
     if (fromOverride) toast('Itinéraire recalculé depuis votre position.');
   } catch (error) {
     toast(error.message || 'Le calcul a échoué. Vérifiez le serveur et la connexion.');
   } finally {
-    button.disabled = false; button.querySelector('span').textContent = 'Calculer mon itinéraire';
+    button.disabled = false; button.querySelector('span').textContent = `Calculer mon itinéraire ${state.mode === 'vtt' ? 'VTT' : 'moto'}`;
   }
 }
 
@@ -219,7 +315,7 @@ function updateNavigation(position) {
   for (let i = 0; i < routePoints.length; i += sampleEvery) nearestRouteDistance = Math.min(nearestRouteDistance, state.map.distance(routePoints[i], [point.lat, point.lon]));
   if (state.routeLayer && !state.rerouting && now - state.lastRerouteAt > 15000 && nearestRouteDistance > 120) {
     state.rerouting = true; state.lastRerouteAt = now;
-    toast('Écart détecté. Recalcul du parcours moto.');
+    toast('Écart détecté. Recalcul du parcours.');
     calculateRoute(point, state.destination).finally(() => { state.rerouting = false; });
   }
 }
@@ -228,7 +324,7 @@ async function startNavigation() {
   if (!state.route) { toast('Calculez d’abord un itinéraire.'); return; }
   if (!navigator.geolocation) { toast('La géolocalisation n’est pas disponible sur cet appareil.'); return; }
   $('#nav-panel').classList.remove('hidden');
-  $('#map-mode-label').textContent = 'NAVIGATION MOTO ACTIVE';
+  $('#map-mode-label').textContent = `NAVIGATION ${state.mode === 'vtt' ? 'VTT' : 'MOTO'} ACTIVE`;
   if ('wakeLock' in navigator) {
     try { state.wakeLock = await navigator.wakeLock.request('screen'); }
     catch { toast('Le maintien de l’écran n’a pas été autorisé par l’appareil.'); }
@@ -241,7 +337,7 @@ async function stopNavigation() {
   if (state.watchId !== null) navigator.geolocation.clearWatch(state.watchId);
   state.watchId = null;
   if (state.wakeLock) { try { await state.wakeLock.release(); } catch {} state.wakeLock = null; }
-  $('#nav-panel').classList.add('hidden'); $('#map-mode-label').textContent = 'OSM · ROUTE MOTO';
+  $('#nav-panel').classList.add('hidden'); $('#map-mode-label').textContent = `OSM · ROUTE ${state.mode === 'vtt' ? 'VTT' : 'MOTO'}`;
   toast('Navigation terminée.');
 }
 
@@ -259,6 +355,7 @@ function renderSaved() {
   document.querySelectorAll('.saved-item').forEach((item, index) => item.addEventListener('click', event => {
     if (event.target.closest('[data-delete]')) return;
     const route = state.saved[index]; if (!route?.origin || !route?.destination) return;
+    if (route.mode) setMode(route.mode);
     $('#origin-input').value = route.originLabel || 'Point enregistré'; $('#destination-input').value = route.destinationLabel || 'Point enregistré';
     state.origin = route.origin; state.destination = route.destination; closeModal('saved-modal'); calculateRoute();
   }));
@@ -267,15 +364,14 @@ function saveSaved() { localStorage.setItem('ct_saved_routes', JSON.stringify(st
 
 function saveRoute() {
   if (!state.route) { toast('Aucun parcours à enregistrer.'); return; }
-  state.saved.unshift({title: routeLabel(), distance: state.route.distanceMeters, savedAt: new Date().toISOString(), origin: state.origin, destination: state.destination, originLabel: $('#origin-input').value, destinationLabel: $('#destination-input').value});
+  state.saved.unshift({title: routeLabel(), distance: state.route.distanceMeters, savedAt: new Date().toISOString(), mode: state.mode, origin: state.origin, destination: state.destination, originLabel: $('#origin-input').value, destinationLabel: $('#destination-input').value});
   state.saved = state.saved.slice(0, 20); saveSaved(); toast('Parcours enregistré sur cet appareil.');
 }
 
 function useCurrentLocation() {
   if (!navigator.geolocation) { toast('La géolocalisation n’est pas disponible.'); return; }
   navigator.geolocation.getCurrentPosition(position => {
-    state.origin = {lat: position.coords.latitude, lon: position.coords.longitude};
-    $('#origin-input').value = 'Ma position actuelle';
+    setPoint('origin', {lat: position.coords.latitude, lon: position.coords.longitude}, 'Ma position actuelle');
     if (state.map) state.map.setView([state.origin.lat, state.origin.lon], 15);
     toast('Position de départ définie.');
   }, error => toast(`Position indisponible : ${error.message}`), {enableHighAccuracy: true, timeout: 12000});
@@ -286,6 +382,40 @@ function centerMap() {
   const point = state.lastPosition || state.origin;
   if (point) state.map.setView([point.lat, point.lon], Math.max(state.map.getZoom(), 14));
   else useCurrentLocation();
+}
+
+function setMode(mode) {
+  state.mode = mode === 'moto' ? 'moto' : 'vtt';
+  localStorage.setItem('ct_mode', state.mode);
+  document.querySelectorAll('.mode-button').forEach(button => {
+    const active = button.dataset.mode === state.mode;
+    button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active));
+  });
+  document.querySelectorAll('.moto-only').forEach(node => node.classList.toggle('hidden', state.mode !== 'moto'));
+  $('#mode-hint').textContent = state.mode === 'vtt' ? 'VTT · BROUTER' : 'MOTO · VALHALLA';
+  $('#routing-note').textContent = state.mode === 'vtt'
+    ? 'Profil VTT BRouter : privilégie les chemins, pistes et voies vertes. Les accès affichés par OSM doivent être vérifiés.'
+    : 'Profil motocross / enduro Valhalla : réduit les grands axes et favorise les pistes accessibles aux motos selon OSM.';
+  $('#route-button span').textContent = `Calculer mon itinéraire ${state.mode === 'vtt' ? 'VTT' : 'moto'}`;
+}
+
+function beginMapPick(target) {
+  state.mapPickTarget = target;
+  initializeMap();
+  $('#map-pick-label').textContent = target === 'origin' ? 'départ' : 'arrivée';
+  $('#map-pick-hint').classList.remove('hidden');
+  if (window.matchMedia('(max-width: 680px)').matches) $('#map').scrollIntoView({behavior: 'smooth', block: 'center'});
+}
+
+function exportGpx() {
+  if (!state.route?.path?.length) { toast('Calculez un itinéraire avant de l’exporter.'); return; }
+  const points = state.route.path.map(([lat, lon]) => `    <trkpt lat="${lat.toFixed(6)}" lon="${lon.toFixed(6)}"></trkpt>`).join('\n');
+  const name = escapeHtml(`${state.mode === 'vtt' ? 'VTT' : 'Motocross'} - ${routeLabel()}`);
+  const gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Cross Travel" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>${name}</name><trkseg>\n${points}\n  </trkseg></trk></gpx>`;
+  const url = URL.createObjectURL(new Blob([gpx], {type: 'application/gpx+xml'}));
+  const link = document.createElement('a'); link.href = url; link.download = 'cross-travel.gpx'; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast('GPX exporté. Ouvrez le fichier avec OsmAnd pour l’importer.');
 }
 
 function saveRouterSettings() {
@@ -311,8 +441,11 @@ $('#save-route').addEventListener('click', saveRoute);
 $('#saved-open').addEventListener('click', () => openModal('saved-modal'));
 $('#saved-open-2').addEventListener('click', () => openModal('saved-modal'));
 $('#help-open').addEventListener('click', () => openModal('help-modal'));
-$('#origin-input').addEventListener('input', () => { state.origin = null; });
-$('#destination-input').addEventListener('input', () => { state.destination = null; });
+document.querySelectorAll('.mode-button').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
+document.querySelectorAll('[data-pick]').forEach(button => button.addEventListener('click', () => beginMapPick(button.dataset.pick)));
+$('#cancel-map-pick').addEventListener('click', () => { state.mapPickTarget = null; $('#map-pick-hint').classList.add('hidden'); });
+$('#export-gpx').addEventListener('click', exportGpx);
+attachAddressSearch('origin'); attachAddressSearch('destination');
 document.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => closeModal(button.dataset.close)));
 document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.addEventListener('click', event => { if (event.target === backdrop) closeModal(backdrop.id); }));
 window.addEventListener('online', () => { $('#connection-label').textContent = 'En ligne'; });
@@ -324,5 +457,6 @@ document.addEventListener('visibilitychange', async () => {
 });
 
 renderSaved();
+setMode(state.mode);
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
 initializeMap();

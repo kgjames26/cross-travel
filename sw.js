@@ -1,4 +1,4 @@
-const CACHE='cross-travel-shell-v1';
+const CACHE='cross-travel-shell-v2';
 const SHELL=['./','./index.html','./styles.css','./osm.css','./app.js','./manifest.webmanifest','./icons/icon.svg'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));

@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#111a16">
-  <meta name="description" content="Préparez et suivez vos itinéraires moto avec Cross Travel.">
+  <meta name="description" content="Préparez et suivez vos itinéraires VTT et motocross avec Cross Travel.">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="osm.css">
-  <title>Cross Travel — itinéraires moto</title>
+  <title>Cross Travel — itinéraires VTT & motocross</title>
 </head>
 <body>
   <div class="app-shell">
@@ -29,30 +29,33 @@
     <main class="main-layout">
       <aside class="sidebar">
         <div class="eyebrow"><span class="eyebrow-line"></span> VOTRE PROCHAINE SORTIE</div>
-        <h1>La route<br>se termine <em>ici.</em></h1>
-        <p class="intro">Tracez votre prochain parcours et gardez le cap, virage après virage.</p>
+        <h1>Moins de bitume,<br><em>plus d’adrénaline.</em></h1>
+        <p class="intro">Des itinéraires pour VTT et motocross, au plus près des chemins autorisés.</p>
 
         <div class="planner-card">
           <div class="card-title-row"><div><span class="section-kicker">PLANIFICATEUR</span><h2>Créer un itinéraire</h2></div><span class="route-number">01</span></div>
           <div class="route-inputs">
-            <label class="location-field"><span class="location-dot start-dot"></span><span class="field-copy"><span>Départ</span><input id="origin-input" autocomplete="off" placeholder="Adresse ou lieu" aria-label="Point de départ"></span><button id="use-location" class="locate-button" type="button" title="Utiliser ma position" aria-label="Utiliser ma position">◎</button></label>
+            <div class="location-wrap"><label class="location-field"><span class="location-dot start-dot"></span><span class="field-copy"><span>Départ</span><input id="origin-input" autocomplete="off" placeholder="Adresse ou lieu" aria-label="Point de départ" aria-autocomplete="list" aria-controls="origin-suggestions"></span><button id="use-location" class="locate-button" type="button" title="Utiliser ma position" aria-label="Utiliser ma position">◎</button><button class="pick-button" data-pick="origin" type="button" title="Choisir le départ sur la carte" aria-label="Choisir le départ sur la carte">⌖</button></label><div class="suggestions hidden" id="origin-suggestions" role="listbox"></div></div>
             <div class="connector-line"></div>
-            <label class="location-field"><span class="location-dot end-dot"></span><span class="field-copy"><span>Arrivée</span><input id="destination-input" autocomplete="off" placeholder="Où souhaitez-vous aller ?" aria-label="Point d’arrivée"></span></label>
+            <div class="location-wrap"><label class="location-field"><span class="location-dot end-dot"></span><span class="field-copy"><span>Arrivée</span><input id="destination-input" autocomplete="off" placeholder="Où souhaitez-vous aller ?" aria-label="Point d’arrivée" aria-autocomplete="list" aria-controls="destination-suggestions"></span><button class="pick-button" data-pick="destination" type="button" title="Choisir l’arrivée sur la carte" aria-label="Choisir l’arrivée sur la carte">⌖</button></label><div class="suggestions hidden" id="destination-suggestions" role="listbox"></div></div>
           </div>
           <div class="preferences">
-            <div class="preferences-head"><span>Préférences</span><span class="preferences-hint">MOTO · OSM</span></div>
+            <div class="preferences-head"><span>Pratique</span><span class="preferences-hint" id="mode-hint">VTT · OSM</span></div>
+            <div class="mode-switch" role="group" aria-label="Type de pratique"><button type="button" class="mode-button active" data-mode="vtt" aria-pressed="true">VTT</button><button type="button" class="mode-button" data-mode="moto" aria-pressed="false">Motocross / enduro</button></div>
             <label class="check-row"><input type="checkbox" id="avoid-highways" checked><span class="custom-check"></span><span>Éviter les grands axes</span></label>
-            <label class="check-row"><input type="checkbox" id="avoid-tolls" checked><span class="custom-check"></span><span>Éviter les péages</span></label>
+            <label class="check-row moto-only"><input type="checkbox" id="avoid-tolls" checked><span class="custom-check"></span><span>Éviter les péages</span></label>
             <label class="check-row"><input type="checkbox" id="favor-trails" checked><span class="custom-check"></span><span>Favoriser pistes et chemins</span><span class="soon-tag">SELON ACCÈS OSM</span></label>
+            <p class="routing-note" id="routing-note">Profil VTT BRouter : privilégie chemins, pistes et voies vertes. Les accès affichés par OSM doivent être vérifiés.</p>
           </div>
           <button class="primary-button" id="route-button"><span>Calculer mon itinéraire</span><svg viewBox="0 0 24 24"><path d="M5 12h13m-5-5 5 5-5 5"/></svg></button>
-          <p class="api-note" id="api-note"><span class="note-icon">i</span> Carte OpenStreetMap et moteur moto Valhalla. Les chemins hors route dépendent des données OSM et restent à vérifier sur place.</p>
+          <p class="api-note" id="api-note"><span class="note-icon">i</span> Carte OpenStreetMap. BRouter calcule le profil VTT; Valhalla le profil motocross. Un chemin autorisé aux vélos ne l’est pas forcément aux motos.</p>
         </div>
 
         <div class="route-result hidden" id="route-result">
           <div class="result-head"><div><span class="section-kicker">ITINÉRAIRE CALCULÉ</span><h2 id="route-title">Votre parcours</h2></div><button class="text-button" id="save-route">＋ Enregistrer</button></div>
           <div class="metrics"><div><strong id="route-distance">—</strong><span>DISTANCE</span></div><div><strong id="route-duration">—</strong><span>DURÉE ESTIMÉE</span></div><div><strong id="route-steps-count">—</strong><span>ÉTAPES</span></div></div>
-          <div class="route-alert"><span class="alert-symbol">!</span><span>Profil moto Valhalla en bêta. L’accès s’appuie sur les attributs OSM connus; vérifiez la signalisation et l’autorisation réelle.</span></div>
+          <div class="route-alert"><span class="alert-symbol">!</span><span id="route-alert-text">Les données OSM peuvent être incomplètes. Vérifiez la signalisation et les accès réels avant de partir.</span></div>
+          <div class="route-tools"><button class="secondary-button" id="export-gpx" type="button">Exporter GPX · OsmAnd</button><a class="secondary-button external-tool" id="wikiloc-link" href="https://www.wikiloc.com/" target="_blank" rel="noopener">Chercher sur Wikiloc ↗</a></div>
           <button class="primary-button start-button" id="start-navigation"><span>Démarrer la navigation</span><svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"/></svg></button>
         </div>
 
@@ -72,6 +75,7 @@
           <span class="map-label label-one">FORÊT DE GOUGNIES</span><span class="map-label label-two">RAVeL</span><span class="map-label label-three">GÉRPINNES</span>
         </div>
         <div class="map-top-controls"><div class="map-badge"><span class="map-badge-dot"></span><span id="map-mode-label">CARTE DE REPÉRAGE</span></div><button class="map-control" id="center-map" title="Centrer sur ma position" aria-label="Centrer sur ma position">◎</button></div>
+        <div class="map-pick-hint hidden" id="map-pick-hint">Touchez la carte pour placer le <strong id="map-pick-label">départ</strong>. <button id="cancel-map-pick" type="button">Annuler</button></div>
         <div id="nav-panel" class="nav-panel hidden">
           <div class="nav-top"><span class="nav-live"><i></i> NAVIGATION ACTIVE</span><button id="stop-navigation" class="nav-stop">Terminer</button></div>
           <div class="next-turn"><span class="turn-arrow" id="turn-arrow">↑</span><div><small>PROCHAINE INSTRUCTION</small><strong id="nav-instruction">Suivez le parcours</strong><span id="nav-distance">En attente du GPS</span></div></div>
@@ -88,7 +92,7 @@
     <div class="modal"><button class="modal-close" data-close="settings-modal" aria-label="Fermer">×</button><span class="section-kicker">CONFIGURATION</span><h2 id="settings-title">Moteur d’itinéraire OSM</h2><p>La carte utilise les tuiles OpenStreetMap. Le calcul moto passe par Valhalla, un moteur de routage fondé sur les données OSM.</p><label class="modal-label" for="route-server-input">Adresse du moteur Valhalla</label><input id="route-server-input" class="modal-input" type="url" placeholder="https://valhalla1.openstreetmap.de/route" autocomplete="url"><div class="modal-actions"><button class="secondary-button" data-close="settings-modal">Annuler</button><button class="primary-button compact" id="save-route-server">Enregistrer</button></div><p class="small-print">Le serveur public est fourni sans garantie de disponibilité. L’attribution OSM reste affichée sur la carte. Les tuiles ne sont pas téléchargées pour un usage hors ligne. Les données d’accès peuvent être incomplètes ou anciennes.</p></div>
   </div>
   <div class="modal-backdrop hidden" id="saved-modal" role="dialog" aria-modal="true" aria-labelledby="saved-title"><div class="modal"><button class="modal-close" data-close="saved-modal" aria-label="Fermer">×</button><span class="section-kicker">COLLECTION</span><h2 id="saved-title">Parcours enregistrés</h2><div id="saved-modal-list" class="saved-list modal-saved-list"></div></div></div>
-  <div class="modal-backdrop hidden" id="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title"><div class="modal"><button class="modal-close" data-close="help-modal" aria-label="Fermer">×</button><span class="section-kicker">INFORMATIONS IMPORTANTES</span><h2 id="help-title">Ce que Cross Travel garantit</h2><p>Cross Travel affiche les cartes OpenStreetMap et calcule un itinéraire avec le profil moto bêta de Valhalla. Le réglage pistes favorise les voies non asphaltées et les petites routes selon les attributs présents dans OpenStreetMap.</p><p>Les données OSM ne constituent pas une garantie juridique ni un relevé en temps réel. Un chemin visible sur la carte, ou autorisé aux vélos, n’est pas nécessairement ouvert aux motos. Vérifiez la signalisation, les arrêtés locaux et les autorisations avant de vous engager.</p><p>Les tuiles de la carte et les itinéraires nécessitent une connexion. Le suivi GPS et l’écran allumé dépendent de l’appareil, du navigateur, de la batterie et du réseau. Ne manipulez pas l’écran en roulant.</p></div></div>
+  <div class="modal-backdrop hidden" id="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title"><div class="modal"><button class="modal-close" data-close="help-modal" aria-label="Fermer">×</button><span class="section-kicker">INFORMATIONS IMPORTANTES</span><h2 id="help-title">VTT, motocross et accès</h2><p>Cross Travel utilise OpenStreetMap, BRouter pour le VTT et Valhalla pour le motocross/enduro. Le profil VTT peut favoriser les chemins, voies vertes et pistes adaptées. Le profil moto tient compte des accès motorisés présents dans OSM et cherche à éviter les grands axes.</p><p>Un RAVeL, un sentier forestier ou un chemin ouvert au VTT n’est pas automatiquement autorisé aux motos. Aucun chemin interdit aux véhicules motorisés ne sera volontairement ajouté au profil moto. Les données OSM peuvent être absentes ou anciennes : vérifiez la signalisation et les règles locales.</p><p>Wikiloc est accessible en recherche externe; l’application ne télécharge pas ses traces. Un itinéraire GPX peut être importé dans OsmAnd. Les cartes et le calcul demandent une connexion. Le GPS et le maintien de l’écran dépendent de l’appareil et du navigateur. Ne manipulez pas l’écran en roulant.</p></div></div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="" defer></script>
   <script src="app.js" defer></script>

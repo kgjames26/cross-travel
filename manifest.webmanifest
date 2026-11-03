@@ -1,8 +1,8 @@
 {
   "id": "./",
-  "name": "Cross Travel — itinéraires moto",
+  "name": "Cross Travel — VTT & motocross",
   "short_name": "Cross Travel",
-  "description": "Préparez et suivez vos itinéraires moto.",
+  "description": "Préparez et suivez des itinéraires VTT et motocross.",
   "lang": "fr-BE",
   "start_url": "./",
   "scope": "./",
