@@ -8,6 +8,7 @@ const state = {
   lastGeocodeAt: 0, routeServer: localStorage.getItem('ct_route_server') || DEFAULT_ROUTER,
   mode: localStorage.getItem('ct_mode') || 'vtt', mapPickTarget: null,
   seekIntense: localStorage.getItem('ct_seek_intense') === 'true',
+  familyFast: localStorage.getItem('ct_family_fast') === 'true',
   voiceEnabled: localStorage.getItem('ct_voice_enabled') !== 'false', lastSpokenStep: -1,
   distanceTravelledMeters: 0, movingDistanceMeters: 0, movingSeconds: 0,
   currentSpeedKmh: 0, previousGpsSample: null, routeStartDistanceTravelled: 0, lastHeading: null, lastMapBearing: 0,
@@ -304,16 +305,24 @@ function normalizeBRouter(payload) {
 }
 
 async function requestBRouter(origin, destination) {
+  const familyFast = state.mode === 'family' && state.familyFast;
   const params = new URLSearchParams({
     lonlats: `${origin.lon},${origin.lat}|${destination.lon},${destination.lat}`,
-    profile: 'mtb', alternativeidx: '0', format: 'geojson',
-    'profile:path_preference': state.mode === 'family' ? '100' : state.seekIntense ? '160' : $('#favor-trails').checked ? '80' : '20',
-    'profile:cycleroutes_pref': state.mode === 'family' ? '0.5' : state.mode === 'vtt' && state.seekIntense ? '0.2' : $('#favor-trails').checked ? '3.0' : '0.2',
-    'profile:MTB_factor': state.mode === 'vtt' && state.seekIntense ? '2.0' : '0.0',
-    'profile:isbike_for_mainroads': state.mode === 'family' ? '0' : '1',
-    'profile:hills': state.mode === 'family' ? '2' : '0',
-    'profile:avoid_unsafe': '1'
+    profile: familyFast ? 'fastbike-verylowtraffic' : 'mtb',
+    alternativeidx: '0', format: 'geojson'
   });
+  if (familyFast) {
+    params.set('profile:consider_traffic', 'true');
+    params.set('profile:allow_motorways', 'false');
+    params.set('profile:consider_town', 'true');
+  } else {
+    params.set('profile:path_preference', state.mode === 'family' ? '100' : state.seekIntense ? '160' : $('#favor-trails').checked ? '80' : '20');
+    params.set('profile:cycleroutes_pref', state.mode === 'family' ? '0.5' : state.mode === 'vtt' && state.seekIntense ? '0.2' : $('#favor-trails').checked ? '3.0' : '0.2');
+    params.set('profile:MTB_factor', state.mode === 'vtt' && state.seekIntense ? '2.0' : '0.0');
+    params.set('profile:isbike_for_mainroads', state.mode === 'family' ? '0' : '1');
+    params.set('profile:hills', state.mode === 'family' ? '2' : '0');
+    params.set('profile:avoid_unsafe', '1');
+  }
   const response = await fetch(`${BROUTER_URL}?${params}`);
   const text = await response.text();
   let payload;
@@ -391,9 +400,9 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
     state.lastSpokenStep = -1;
     state.routeStartDistanceTravelled = state.distanceTravelledMeters;
     drawRoute(); showRoute();
-    $('#map-mode-label').textContent = state.mode === 'family' ? 'OSM · RAVeL & CHEMINS' : state.mode === 'road' ? 'OSM · VÉLO DE ROUTE · RAPIDE' : state.mode === 'vtt' ? 'OSM · BROUTER · PROFIL VTT' : 'OSM · MOTO · PETITES ROUTES';
+    $('#map-mode-label').textContent = state.mode === 'family' ? state.familyFast ? 'OSM · VÉLO FAMILIAL · RAPIDE' : 'OSM · RAVeL & CHEMINS' : state.mode === 'road' ? 'OSM · VÉLO DE ROUTE · RAPIDE' : state.mode === 'vtt' ? 'OSM · BROUTER · PROFIL VTT' : 'OSM · MOTO · PETITES ROUTES';
     $('#route-alert-text').textContent = state.mode === 'family'
-      ? 'Vélo familial : RAVeL balisés prioritaires; voies cyclables en bord de route fortement pénalisées. Les routes ne servent qu’aux raccordements nécessaires.'
+      ? state.familyFast ? 'Vélo familial rapide : profil vélo à faible trafic, autoroutes exclues et axes très fréquentés pénalisés. Vérifiez le parcours et les accès avant de partir.' : 'Vélo familial : RAVeL balisés prioritaires; voies cyclables en bord de route fortement pénalisées. Les routes ne servent qu’aux raccordements nécessaires.'
       : state.mode === 'road'
         ? 'Vélo de route : trajet rapide sur routes adaptées et pistes cyclables; surfaces peu roulantes pénalisées.'
         : state.mode === 'moto'
@@ -565,13 +574,13 @@ async function startNavigation() {
   $('#nav-panel').classList.remove('hidden');
   document.body.classList.add('nav-active');
   $('#map-mode-label').textContent = 'NAVIGATION ' + (state.mode === 'family' ? 'VÉLO FAMILIAL' : state.mode === 'road' ? 'VÉLO DE ROUTE' : state.mode === 'moto' ? 'MOTOCROSS' : 'VTT') + ' ACTIVE';
-  $('#nav-mode-pill').textContent = (state.mode === 'family' ? 'VÉLO FAMILIAL · RAVeL' : state.mode === 'road' ? 'VÉLO DE ROUTE' : state.mode === 'moto' ? 'MOTOCROSS · PETITES ROUTES' : 'VTT') + ' · GPS ACTIF';
+  $('#nav-mode-pill').textContent = (state.mode === 'family' ? state.familyFast ? 'VÉLO FAMILIAL · RAPIDE' : 'VÉLO FAMILIAL · RAVeL' : state.mode === 'road' ? 'VÉLO DE ROUTE' : state.mode === 'moto' ? 'MOTOCROSS · PETITES ROUTES' : 'VTT') + ' · GPS ACTIF';
   $('#nav-rider-image').src = state.mode === 'family' ? 'assets/velo-familial.webp' : state.mode === 'road' ? 'assets/velo-route.webp' : state.mode === 'moto' ? 'assets/motocross-calme.webp' : 'assets/vtt-dynamique.webp';
   state.distanceTravelledMeters = 0; state.movingDistanceMeters = 0; state.movingSeconds = 0;
   state.currentSpeedKmh = 0; state.previousGpsSample = null; state.routeStartDistanceTravelled = 0;
   state.lastSpokenStep = -1;
   if (state.mode === 'moto') announceStep(0);
-  else speakText(state.mode === 'family' ? 'Navigation vélo familial démarrée. Suivez le RAVeL.' : state.mode === 'road' ? 'Navigation vélo de route démarrée. Suivez l’itinéraire rapide.' : 'Navigation VTT démarrée. Suivez le tracé.');
+  else speakText(state.mode === 'family' ? state.familyFast ? 'Navigation vélo familial rapide démarrée. Suivez l’itinéraire.' : 'Navigation vélo familial démarrée. Suivez le RAVeL.' : state.mode === 'road' ? 'Navigation vélo de route démarrée. Suivez l’itinéraire rapide.' : 'Navigation VTT démarrée. Suivez le tracé.');
   if ('wakeLock' in navigator) {
     try { state.wakeLock = await navigator.wakeLock.request('screen'); }
     catch { toast('Le maintien de l’écran n’a pas été autorisé par l’appareil.'); }
@@ -588,7 +597,7 @@ async function stopNavigation() {
   document.body.classList.remove('nav-active');
   if (window.speechSynthesis) window.speechSynthesis.cancel();
   if (state.wakeLock) { try { await state.wakeLock.release(); } catch {} state.wakeLock = null; }
-  $('#nav-panel').classList.add('hidden'); $('#map-mode-label').textContent = state.mode === 'family' ? 'OSM · RAVeL & CHEMINS' : state.mode === 'road' ? 'OSM · VÉLO DE ROUTE · RAPIDE' : state.mode === 'vtt' ? 'OSM · ROUTE VTT' : 'OSM · MOTO · PETITES ROUTES';
+  $('#nav-panel').classList.add('hidden'); $('#map-mode-label').textContent = state.mode === 'family' ? state.familyFast ? 'OSM · VÉLO FAMILIAL · RAPIDE' : 'OSM · RAVeL & CHEMINS' : state.mode === 'road' ? 'OSM · VÉLO DE ROUTE · RAPIDE' : state.mode === 'vtt' ? 'OSM · ROUTE VTT' : 'OSM · MOTO · PETITES ROUTES';
   toast('Navigation terminée.');
 }
 
@@ -607,6 +616,9 @@ function renderSaved() {
     if (event.target.closest('[data-delete]')) return;
     const route = state.saved[index]; if (!route?.origin || !route?.destination) return;
     if (route.mode) setMode(route.mode);
+    if (route.mode === 'family' && typeof route.familyFast === 'boolean') {
+      state.familyFast = route.familyFast; localStorage.setItem('ct_family_fast', String(state.familyFast)); setMode('family');
+    }
     $('#origin-input').value = route.originLabel || 'Point enregistré'; $('#destination-input').value = route.destinationLabel || 'Point enregistré';
     state.origin = route.origin; state.destination = route.destination; closeModal('saved-modal'); calculateRoute();
   }));
@@ -615,7 +627,7 @@ function saveSaved() { localStorage.setItem('ct_saved_routes', JSON.stringify(st
 
 function saveRoute() {
   if (!state.route) { toast('Aucun parcours à enregistrer.'); return; }
-  state.saved.unshift({title: routeLabel(), distance: state.route.distanceMeters, savedAt: new Date().toISOString(), mode: state.mode, origin: state.origin, destination: state.destination, originLabel: $('#origin-input').value, destinationLabel: $('#destination-input').value});
+  state.saved.unshift({title: routeLabel(), distance: state.route.distanceMeters, savedAt: new Date().toISOString(), mode: state.mode, familyFast: state.mode === 'family' ? state.familyFast : undefined, origin: state.origin, destination: state.destination, originLabel: $('#origin-input').value, destinationLabel: $('#destination-input').value});
   state.saved = state.saved.slice(0, 20); saveSaved(); toast('Parcours enregistré sur cet appareil.');
 }
 
@@ -645,11 +657,13 @@ function setMode(mode) {
   });
   document.querySelectorAll('.moto-only').forEach(node => node.classList.toggle('hidden', state.mode !== 'moto'));
   $('#favor-trails-row').classList.toggle('hidden', state.mode === 'family' || state.mode === 'road');
+  $('#family-fast-row').classList.toggle('hidden', state.mode !== 'family');
+  $('#family-fast').checked = state.familyFast;
   $('#sensation-row').classList.toggle('hidden', state.mode !== 'vtt' && state.mode !== 'moto');
   $('#seek-intense').checked = state.seekIntense;
-  $('#mode-hint').textContent = state.mode === 'family' ? 'RAVeL · PENTES DOUCES' : state.mode === 'road' ? 'ROUTES · RAPIDE' : state.mode === 'vtt' ? state.seekIntense ? 'VTT · SENSATIONS' : 'VTT · CHEMINS' : state.seekIntense ? 'MOTO · SENSATIONS' : 'MOTO · PETITES ROUTES';
+  $('#mode-hint').textContent = state.mode === 'family' ? state.familyFast ? 'VÉLO FAMILIAL · RAPIDE' : 'RAVeL · PENTES DOUCES' : state.mode === 'road' ? 'ROUTES · RAPIDE' : state.mode === 'vtt' ? state.seekIntense ? 'VTT · SENSATIONS' : 'VTT · CHEMINS' : state.seekIntense ? 'MOTO · SENSATIONS' : 'MOTO · PETITES ROUTES';
   $('#routing-note').textContent = state.mode === 'family'
-    ? 'Vélo familial : RAVeL balisés prioritaires; voies cyclables en bord de route fortement pénalisées. Les routes ne servent qu’aux raccordements nécessaires.'
+    ? state.familyFast ? 'Trajet plus direct avec le profil vélo à faible trafic. Autoroutes exclues, axes fréquentés pénalisés; le RAVeL peut ne plus être prioritaire.' : 'Vélo familial : RAVeL balisés prioritaires; voies cyclables en bord de route fortement pénalisées. Les routes ne servent qu’aux raccordements nécessaires.'
     : state.mode === 'road'
       ? 'Vélo de route : itinéraire le plus rapide possible sur routes adaptées et pistes cyclables, avec préférence pour les surfaces roulantes.'
       : state.mode === 'vtt'
@@ -705,6 +719,12 @@ $('#saved-open').addEventListener('click', () => openModal('saved-modal'));
 $('#saved-open-2').addEventListener('click', () => openModal('saved-modal'));
 $('#help-open').addEventListener('click', () => openModal('help-modal'));
 document.querySelectorAll('.mode-button').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
+$('#family-fast').addEventListener('change', () => {
+  state.familyFast = $('#family-fast').checked;
+  localStorage.setItem('ct_family_fast', String(state.familyFast));
+  setMode(state.mode);
+  if (state.route && state.mode === 'family' && state.origin && state.destination) calculateRoute(state.origin, state.destination);
+});
 $('#seek-intense').addEventListener('change', () => {
   state.seekIntense = $('#seek-intense').checked;
   localStorage.setItem('ct_seek_intense', String(state.seekIntense));
