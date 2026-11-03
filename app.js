@@ -2,7 +2,7 @@ const $ = (selector) => document.querySelector(selector);
 const DEFAULT_ROUTER = 'https://valhalla1.openstreetmap.de/route';
 const BROUTER_URL = 'https://brouter.de/brouter';
 const state = {
-  map: null, tileLayer: null, streetLayer: null, satelliteLayer: null, mapStyle: "osm", satelliteErrors: 0, satelliteLoaded: false, satelliteLoadTimer: null, route: null, routeLayer: null, stepLayers: [], markers: [],
+  map: null, tileLayer: null, streetLayer: null, satelliteLayer: null, mapStyle: localStorage.getItem('ct_map_style') || "osm", satelliteErrors: 0, satelliteLoaded: false, satelliteLoadTimer: null, route: null, routeLayer: null, stepLayers: [], markers: [],
   origin: null, destination: null, currentStep: 0, watchId: null, wakeLock: null,
   lastPosition: null, navigationMarker: null, rerouting: false, lastRerouteAt: 0,
   lastGeocodeAt: 0, routeServer: localStorage.getItem('ct_route_server') || DEFAULT_ROUTER,
@@ -71,9 +71,11 @@ function useBasemap(style, announce = false) {
   const layer = nextStyle === 'satellite' ? state.satelliteLayer : state.streetLayer;
   state.tileLayer = layer;
   layer.addTo(state.map);
-  const button = $('#map-style-toggle');
-  button.textContent = nextStyle === 'satellite' ? 'Carte OSM' : 'Satellite';
-  button.setAttribute('aria-pressed', String(nextStyle === 'satellite'));
+  localStorage.setItem('ct_map_style', nextStyle);
+  document.querySelectorAll('#map-style-toggle, #map-style-toggle-home').forEach(button => {
+    button.textContent = nextStyle === 'satellite' ? 'Carte normale' : 'Satellite';
+    button.setAttribute('aria-pressed', String(nextStyle === 'satellite'));
+  });
   if (nextStyle === 'satellite') {
     state.satelliteLoadTimer = setTimeout(() => {
       if (state.mapStyle === 'satellite' && !state.satelliteLoaded) useBasemap('osm', true);
@@ -122,8 +124,10 @@ function initializeMap() {
     state.satelliteErrors++;
     if (state.satelliteErrors >= 3) useBasemap('osm', true);
   });
-  $('#map-style-toggle').addEventListener('click', () => useBasemap(state.mapStyle !== 'satellite'));
-  useBasemap('osm', false);
+  document.querySelectorAll('#map-style-toggle, #map-style-toggle-home').forEach(button => {
+    button.onclick = () => useBasemap(state.mapStyle !== 'satellite');
+  });
+  useBasemap(state.mapStyle, false);
   state.map.on('click', event => {
     const point = {lat: event.latlng.lat, lon: event.latlng.lng};
     const target = state.mapPickTarget || (!state.origin ? 'origin' : 'destination');
@@ -313,6 +317,116 @@ async function requestBRouter(origin, destination) {
   return normalizeBRouter(payload);
 }
 
+
+async function requestRavelRoute(origin, destination) {
+  const latPad = Math.max(0.035, Math.abs(destination.lat - origin.lat) * 0.08);
+  const lonPad = Math.max(0.05, Math.abs(destination.lon - origin.lon) * 0.08);
+  const south = Math.min(origin.lat, destination.lat) - latPad;
+  const north = Math.max(origin.lat, destination.lat) + latPad;
+  const west = Math.min(origin.lon, destination.lon) - lonPad;
+  const east = Math.max(origin.lon, destination.lon) + lonPad;
+  const bbox = `(${south},${west},${north},${east})`;
+  const query = `[out:json][timeout:25];(relation["route"="bicycle"]["name"~"RAVeL",i]${bbox};relation["route"="bicycle"]["ref"~"RAVeL",i]${bbox};way["name"~"RAVeL",i]${bbox};way["ref"~"RAVeL",i]${bbox};);(._;>;);out body;`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  let response;
+  try {
+    response = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'},
+      body: 'data=' + encodeURIComponent(query), signal: controller.signal
+    });
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('La recherche du réseau RAVeL a expiré. Réessayez avec une zone plus proche.');
+    throw new Error('Le réseau RAVeL OpenStreetMap est momentanément inaccessible.');
+  } finally { clearTimeout(timeout); }
+  if (!response.ok) throw new Error(`Recherche RAVeL indisponible (${response.status}).`);
+  const payload = await response.json();
+  const elements = payload.elements || [];
+  const relations = elements.filter(item => item.type === 'relation' && item.tags?.route === 'bicycle' && /ravel/i.test((item.tags?.name || '') + ' ' + (item.tags?.ref || '')));
+  const relationWays = new Set(relations.flatMap(item => (item.members || []).filter(member => member.type === 'way').map(member => member.ref)));
+  const nodes = new Map(elements.filter(item => item.type === 'node').map(item => [item.id, [item.lat, item.lon]]));
+  const ways = elements.filter(item => {
+    if (item.type !== 'way' || !Array.isArray(item.nodes)) return false;
+    const tags = item.tags || {};
+    const namedRavel = /ravel/i.test((tags.name || '') + ' ' + (tags.ref || ''));
+    const onRavelRelation = relationWays.has(item.id);
+    const bikeWay = ['cycleway','path','track','pedestrian','footway'].includes(tags.highway);
+    return (namedRavel || onRavelRelation) && bikeWay &&
+      !['no','private'].includes(tags.access) && !['no','private'].includes(tags.bicycle);
+  });
+  if (!ways.length) throw new Error('Aucun tronçon RAVeL cartographié dans cette zone. Le mode familial ne propose pas de trajet par les routes.');
+  const graph = new Map();
+  const addEdge = (from, to, meters) => {
+    if (!graph.has(from)) graph.set(from, []);
+    graph.get(from).push({id: to, meters});
+  };
+  for (const way of ways) {
+    const tags = way.tags || {};
+    const forwardOnly = tags.oneway === 'yes' && tags.bicycle !== 'no';
+    const reverseOnly = tags.oneway === '-1';
+    for (let i = 1; i < way.nodes.length; i++) {
+      const a = way.nodes[i - 1], b = way.nodes[i];
+      const pa = nodes.get(a), pb = nodes.get(b);
+      if (!pa || !pb) continue;
+      const meters = L.latLng(pa).distanceTo(L.latLng(pb));
+      if (meters > 2000) continue;
+      if (!reverseOnly) addEdge(a, b, meters);
+      if (!forwardOnly) addEdge(b, a, meters);
+    }
+  }
+  const nearestNode = point => {
+    let best = null, bestMeters = Infinity;
+    for (const id of graph.keys()) {
+      const coords = nodes.get(id);
+      if (!coords) continue;
+      const meters = L.latLng(point.lat, point.lon).distanceTo(L.latLng(coords));
+      if (meters < bestMeters) { best = id; bestMeters = meters; }
+    }
+    return {id: best, meters: bestMeters};
+  };
+  const start = nearestNode(origin), goal = nearestNode(destination);
+  if (!start.id || !goal.id || start.meters > 1200 || goal.meters > 1200) {
+    throw new Error('Départ ou arrivée trop éloigné du RAVeL cartographié (maximum 1,2 km). Choisissez un point sur le réseau RAVeL.');
+  }
+  const distances = new Map([[start.id, 0]]), previous = new Map(), heap = [{id: start.id, cost: 0}];
+  const push = item => { heap.push(item); let i = heap.length - 1; while (i) { const p = (i - 1) >> 1; if (heap[p].cost <= item.cost) break; heap[i] = heap[p]; i = p; } heap[i] = item; };
+  const pop = () => {
+    const first = heap[0], last = heap.pop();
+    if (heap.length) { let i = 0; while (true) { let c = i * 2 + 1; if (c >= heap.length) break; if (c + 1 < heap.length && heap[c + 1].cost < heap[c].cost) c++; if (heap[c].cost >= last.cost) break; heap[i] = heap[c]; i = c; } heap[i] = last; }
+    return first;
+  };
+  while (heap.length) {
+    const current = pop();
+    if (current.cost !== distances.get(current.id)) continue;
+    if (current.id === goal.id) break;
+    for (const edge of graph.get(current.id) || []) {
+      const next = current.cost + edge.meters;
+      if (next < (distances.get(edge.id) ?? Infinity)) {
+        distances.set(edge.id, next); previous.set(edge.id, current.id); push({id: edge.id, cost: next});
+      }
+    }
+  }
+  if (!distances.has(goal.id)) throw new Error('Aucun parcours RAVeL continu ne relie ces points. Aucune route ordinaire ne sera ajoutée.');
+  const ids = [goal.id];
+  while (ids[0] !== start.id) { const parent = previous.get(ids[0]); if (parent === undefined) throw new Error('Le tracé RAVeL est discontinu dans OpenStreetMap.'); ids.unshift(parent); }
+  const path = ids.map(id => nodes.get(id)).filter(Boolean);
+  if (path.length < 2) throw new Error('Choisissez deux points distincts sur le réseau RAVeL.');
+  let distanceMeters = 0, cumulative = [0];
+  for (let i = 1; i < path.length; i++) { distanceMeters += L.latLng(path[i-1]).distanceTo(L.latLng(path[i])); cumulative[i] = distanceMeters; }
+  const bearing = (a,b) => { const rad=v=>v*Math.PI/180, y=Math.sin(rad(b[1]-a[1]))*Math.cos(rad(b[0])), x=Math.cos(rad(a[0]))*Math.sin(rad(b[0]))-Math.sin(rad(a[0]))*Math.cos(rad(b[0]))*Math.cos(rad(b[1]-a[1])); return (Math.atan2(y,x)*180/Math.PI+360)%360; };
+  const steps=[]; let previousIndex=0, lastTurn=0;
+  for(let i=3;i<path.length-3;i++){
+    if(cumulative[i]-lastTurn<180) continue;
+    const delta=((bearing(path[i-3],path[i+3])-bearing(path[i-3],path[i])+540)%360)-180;
+    if(Math.abs(delta)<55) continue;
+    steps.push({instructions:delta>0?'Suivez le RAVeL en tournant à droite':'Suivez le RAVeL en tournant à gauche',distanceMeters:cumulative[i]-cumulative[previousIndex],endLocation:{lat:path[i][0],lon:path[i][1]},path:path.slice(previousIndex,i+1)});
+    previousIndex=i; lastTurn=cumulative[i];
+  }
+  const end=path.at(-1);
+  steps.push({instructions:'Continuez sur le RAVeL jusqu’à l’arrivée',distanceMeters:distanceMeters-cumulative[previousIndex],endLocation:{lat:end[0],lon:end[1]},path:path.slice(previousIndex)});
+  return {path,distanceMeters,durationSeconds:distanceMeters/1000/14*3600,legs:[{steps}]};
+}
+
 async function calculateRoute(fromOverride = null, toOverride = null) {
   const button = $('#route-button'); button.disabled = true;
   button.querySelector('span').textContent = 'Calcul en cours…';
@@ -321,7 +435,9 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
     const origin = fromOverride || await resolvePoint($('#origin-input'), state.origin);
     const destination = toOverride || await resolvePoint($('#destination-input'), state.destination);
     state.origin = origin; state.destination = destination;
-    if (state.mode === 'vtt') {
+    if (state.mode === 'family') {
+      state.route = await requestRavelRoute(origin, destination);
+    } else if (state.mode === 'vtt') {
       state.route = await requestBRouter(origin, destination);
     } else {
       const preferPaths = $('#favor-trails').checked;
@@ -348,21 +464,23 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
     state.lastSpokenStep = -1;
     state.routeStartDistanceTravelled = state.distanceTravelledMeters;
     drawRoute(); showRoute();
-    $('#map-mode-label').textContent = state.mode === 'vtt' ? 'OSM · BROUTER · PROFIL VTT' : 'OSM · VALHALLA · PROFIL MOTO';
-    $('#route-alert-text').textContent = state.mode === 'vtt'
-      ? 'VTT : priorité renforcée aux sentiers, RAVeL et voies cyclables; les routes urbaines et axes fréquentés sont fortement pénalisés quand une alternative existe.'
-      : 'Motocross : chemins accessibles aux motos favorisés, rues urbaines et grands axes évités autant que possible; vérifiez toujours signalisation et autorisations.';
-    const wikilocQuery = encodeURIComponent(`${$('#origin-input').value} ${$('#destination-input').value} ${state.mode === 'vtt' ? 'VTT' : 'enduro motocross'}`);
+    $('#map-mode-label').textContent = state.mode === 'family' ? 'OSM · RAVeL EXCLUSIF' : state.mode === 'vtt' ? 'OSM · BROUTER · PROFIL VTT' : 'OSM · VALHALLA · PROFIL MOTO';
+    $('#route-alert-text').textContent = state.mode === 'family'
+      ? 'Vélo familial : tracé exclusivement sur les tronçons RAVeL cartographiés. Aucun tronçon routier de remplacement.'
+      : state.mode === 'vtt'
+        ? 'VTT : priorité renforcée aux sentiers, RAVeL et voies cyclables; les routes urbaines et axes fréquentés sont fortement pénalisés quand une alternative existe.'
+        : 'Motocross : chemins accessibles aux motos favorisés, rues urbaines et grands axes évités autant que possible; vérifiez toujours signalisation et autorisations.';
+    const wikilocQuery = encodeURIComponent(`${$('#origin-input').value} ${$('#destination-input').value} ${state.mode === 'family' ? 'vélo familial RAVeL' : state.mode === 'vtt' ? 'VTT' : 'enduro motocross'}`);
     $('#wikiloc-link').href = `https://www.wikiloc.com/search?query=${wikilocQuery}`;
     if (state.watchId !== null) {
       if (state.mode === 'moto') announceStep(0);
-      else speakText('Parcours VTT recalculé. Suivez le nouveau tracé.');
+      else speakText(state.mode === 'family' ? 'Parcours RAVeL familial recalculé.' : 'Parcours VTT recalculé. Suivez le nouveau tracé.');
     }
     if (fromOverride) toast('Itinéraire recalculé depuis votre position.');
   } catch (error) {
     toast(error.message || 'Le calcul a échoué. Vérifiez le serveur et la connexion.');
   } finally {
-    button.disabled = false; button.querySelector('span').textContent = `Calculer mon itinéraire ${state.mode === 'vtt' ? 'VTT' : 'moto'}`;
+    button.disabled = false; button.querySelector('span').textContent = state.mode === 'family' ? 'Calculer mon itinéraire familial' : `Calculer mon itinéraire ${state.mode === 'vtt' ? 'VTT' : 'moto'}`;
   }
 }
 
@@ -513,14 +631,14 @@ async function startNavigation() {
   if (!navigator.geolocation) { toast('La géolocalisation n’est pas disponible sur cet appareil.'); return; }
   $('#nav-panel').classList.remove('hidden');
   document.body.classList.add('nav-active');
-  $('#map-mode-label').textContent = 'NAVIGATION ' + (state.mode === 'vtt' ? 'VTT' : 'MOTO') + ' ACTIVE';
-  $('#nav-mode-pill').textContent = (state.mode === 'vtt' ? 'VTT' : 'MOTOCROSS / ENDURO') + ' · GPS ACTIF';
-  $('#nav-rider-image').src = state.mode === 'vtt' ? 'assets/vtt-dynamique.webp' : 'assets/motocross-calme.webp';
+  $('#map-mode-label').textContent = 'NAVIGATION ' + (state.mode === 'family' ? 'RAVeL FAMILIAL' : state.mode === 'vtt' ? 'VTT' : 'MOTOCROSS') + ' ACTIVE';
+  $('#nav-mode-pill').textContent = (state.mode === 'family' ? 'VÉLO FAMILIAL · RAVeL EXCLUSIF' : state.mode === 'vtt' ? 'VTT' : 'MOTOCROSS / ENDURO') + ' · GPS ACTIF';
+  $('#nav-rider-image').src = state.mode === 'family' ? 'assets/velo-familial.webp' : state.mode === 'vtt' ? 'assets/vtt-dynamique.webp' : 'assets/motocross-calme.webp';
   state.distanceTravelledMeters = 0; state.movingDistanceMeters = 0; state.movingSeconds = 0;
   state.currentSpeedKmh = 0; state.previousGpsSample = null; state.routeStartDistanceTravelled = 0;
   state.lastSpokenStep = -1;
   if (state.mode === 'moto') announceStep(0);
-  else speakText('Navigation VTT démarrée. Suivez le tracé.');
+  else speakText(state.mode === 'family' ? 'Navigation vélo familial démarrée. Suivez le RAVeL.' : 'Navigation VTT démarrée. Suivez le tracé.');
   if ('wakeLock' in navigator) {
     try { state.wakeLock = await navigator.wakeLock.request('screen'); }
     catch { toast('Le maintien de l’écran n’a pas été autorisé par l’appareil.'); }
@@ -537,7 +655,7 @@ async function stopNavigation() {
   document.body.classList.remove('nav-active');
   if (window.speechSynthesis) window.speechSynthesis.cancel();
   if (state.wakeLock) { try { await state.wakeLock.release(); } catch {} state.wakeLock = null; }
-  $('#nav-panel').classList.add('hidden'); $('#map-mode-label').textContent = `OSM · ROUTE ${state.mode === 'vtt' ? 'VTT' : 'MOTO'}`;
+  $('#nav-panel').classList.add('hidden'); $('#map-mode-label').textContent = state.mode === 'family' ? 'OSM · RAVeL EXCLUSIF' : `OSM · ROUTE ${state.mode === 'vtt' ? 'VTT' : 'MOTO'}`;
   toast('Navigation terminée.');
 }
 
@@ -585,18 +703,21 @@ function centerMap() {
 }
 
 function setMode(mode) {
-  state.mode = mode === 'moto' ? 'moto' : 'vtt';
+  state.mode = mode === 'moto' ? 'moto' : mode === 'family' ? 'family' : 'vtt';
   localStorage.setItem('ct_mode', state.mode);
   document.querySelectorAll('.mode-button').forEach(button => {
     const active = button.dataset.mode === state.mode;
     button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active));
   });
   document.querySelectorAll('.moto-only').forEach(node => node.classList.toggle('hidden', state.mode !== 'moto'));
-  $('#mode-hint').textContent = state.mode === 'vtt' ? 'VTT · MTB' : 'MOTO · VALHALLA';
-  $('#routing-note').textContent = state.mode === 'vtt'
-    ? 'VTT : priorité forte aux sentiers et RAVeL; les routes de centre-ville sont pénalisées pour chercher un détour praticable.'
-    : 'Motocross : priorité maximale aux pistes et chemins ouverts aux motos; grands axes et rues urbaines sont pénalisés, quitte à rallonger le trajet.';
-  $('#route-button span').textContent = `Calculer mon itinéraire ${state.mode === 'vtt' ? 'VTT' : 'moto'}`;
+  $('#favor-trails-row').classList.toggle('hidden', state.mode === 'family');
+  $('#mode-hint').textContent = state.mode === 'family' ? 'RAVeL · EXCLUSIF' : state.mode === 'vtt' ? 'VTT · MTB' : 'MOTO · VALHALLA';
+  $('#routing-note').textContent = state.mode === 'family'
+    ? 'Vélo familial : uniquement les tronçons RAVeL identifiés dans OpenStreetMap. Pas de route de remplacement; les points doivent rejoindre le réseau.'
+    : state.mode === 'vtt'
+      ? 'VTT : priorité forte aux sentiers et RAVeL; les routes de centre-ville sont pénalisées pour chercher un détour praticable.'
+      : 'Motocross : priorité maximale aux pistes et chemins ouverts aux motos; grands axes et rues urbaines sont pénalisés, quitte à rallonger le trajet.';
+  $('#route-button span').textContent = state.mode === 'family' ? 'Calculer mon itinéraire familial' : `Calculer mon itinéraire ${state.mode === 'vtt' ? 'VTT' : 'moto'}`;
 }
 
 function beginMapPick(target) {
@@ -635,6 +756,7 @@ $('#save-route-server').addEventListener('click', saveRouterSettings);
 $('#route-button').addEventListener('click', () => calculateRoute());
 $('#use-location').addEventListener('click', useCurrentLocation);
 $('#center-map').addEventListener('click', centerMap);
+$('#map-style-toggle-home').addEventListener('click', () => useBasemap(state.mapStyle !== 'satellite'));
 $('#start-navigation').addEventListener('click', startNavigation);
 $('#stop-navigation').addEventListener('click', stopNavigation);
 $('#voice-toggle').addEventListener('click', toggleVoice);
