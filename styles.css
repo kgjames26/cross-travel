@@ -557,3 +557,71 @@ body{
 
 .route-result .start-button{height:58px;margin:12px 0 15px;padding-inline:20px;font-size:15px;box-shadow:0 8px 22px rgba(110,160,38,.2)}.route-result .start-button svg{width:23px;height:23px}
 @media(max-width:680px){.route-result .start-button{height:62px;font-size:16px;margin:10px 0 14px}}
+
+
+/* Readability pass: enlarge useful controls and guidance without changing the hero title. */
+body{font-size:15px}
+.intro{font-size:15px;line-height:1.55}
+.eyebrow,.section-kicker{font-size:11px}
+.card-title-row h2,.result-head h2{font-size:19px}
+.field-copy>span{font-size:11px}
+.field-copy input{font-size:15px}
+.location-field{min-height:59px}
+.preferences-head{font-size:13px}
+.preferences-hint{font-size:10px}
+.mode-switch{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;padding:5px}
+.mode-button{min-height:78px;gap:8px;padding:7px 9px;font-size:12px}
+.mode-button img,.mode-button[data-mode="family"] img{width:52px;height:60px}
+.mode-button span{font-size:12px}
+.mode-button small{font-size:9px}
+.check-row{min-height:33px;font-size:13px;gap:10px}
+.custom-check{width:17px;height:17px}
+.check-row input:checked+.custom-check:after{font-size:12px}
+.soon-tag{font-size:9px}
+.routing-note,.api-note{font-size:11px;line-height:1.5}
+.primary-button{min-height:48px;font-size:14px}
+.metrics strong{font-size:20px}
+.metrics span{font-size:10px}
+.route-alert{font-size:12px;line-height:1.5}
+.route-tools .secondary-button{min-height:38px;font-size:11px}
+.saved-route-copy strong{font-size:12px}
+.saved-route-copy span,.empty-saved{font-size:10px}
+.safety-foot{font-size:11px}
+.modal p{font-size:13px}
+.modal-label{font-size:11px}
+.map-style-home{font-size:12px}
+.nav-live{font-size:10px}
+.nav-mode-pill{font-size:12px;letter-spacing:.08em}
+.nav-guidance small{font-size:12px}
+.nav-guidance div>span{font-size:17px}
+.nav-speed-label{font-size:10px}
+.nav-speed>small:last-child{font-size:11px}
+.nav-secondary-metrics small{font-size:10px;line-height:1.25;letter-spacing:.04em}
+.nav-secondary-metrics strong{font-size:clamp(19px,2.8vw,28px)}
+.nav-footer{font-size:11px}
+body.nav-active .nav-stop{font-size:13px;padding:10px 13px}
+body.nav-active .voice-toggle{font-size:12px;padding:10px 13px}
+body.nav-active .nav-mode-pill{font-size:12px;padding:8px 14px}
+body.nav-active .nav-secondary-metrics small{font-size:10px;letter-spacing:.04em}
+body.nav-active .nav-secondary-metrics strong{font-size:clamp(19px,2.8vw,28px)}
+body.nav-active .nav-speed-label{font-size:10px}
+body.nav-active .nav-speed-average{font-size:10px}
+body.nav-active .nav-footer{font-size:11px}
+@media(max-width:680px){
+  .mode-switch{gap:6px}
+  .mode-button{min-height:76px;padding:6px 8px}
+  .mode-button img,.mode-button[data-mode="family"] img{width:48px;height:56px}
+  .mode-button span{font-size:12px}
+  .mode-button small{font-size:9px}
+  .check-row{font-size:12px}
+  body.nav-active .nav-fullscreen-content{max-height:72dvh;gap:8px}
+  body.nav-active .nav-mode-pill{font-size:11px}
+  body.nav-active .nav-live{font-size:9px}
+  body.nav-active .nav-stop,body.nav-active .voice-toggle{font-size:11px;padding:8px 9px}
+  body.nav-active .nav-speed-label{font-size:9px}
+  body.nav-active .nav-speed-average{font-size:9px}
+  body.nav-active .nav-secondary-metrics>div{min-height:68px;padding:7px 6px;gap:5px}
+  body.nav-active .nav-secondary-metrics small{font-size:8px;line-height:1.2;letter-spacing:.025em}
+  body.nav-active .nav-secondary-metrics strong{font-size:clamp(17px,4.8vw,21px)}
+  body.nav-active .nav-footer{font-size:10px}
+}
