@@ -10,7 +10,7 @@ Le site est statique : ouvrez `index.html` avec un serveur local ou déployez le
 
 Dans Google Cloud Console, activez la facturation et les API **Maps JavaScript API** et **Routes API**. Créez une clé limitée aux domaines de déploiement, puis ouvrez Paramètres dans Cross Travel et collez cette clé. Elle est stockée dans le stockage local de ce navigateur uniquement. Les requêtes Maps et Routes sont soumises aux tarifs, quotas et conditions Google.
 
-Le calcul utilise la bibliothèque Routes de Maps JavaScript et le mode `TWO_WHEELER`, avec options pour éviter les grands axes et les péages. La disponibilité varie selon la région et le mode deux-roues est en bêta. Ce service calcule un itinéraire routier pour deux-roues ; il ne fournit pas une base de pistes motocross et ne vérifie pas les droits de passage sur les chemins. L’application ne certifie donc ni la légalité ni l’état d’un sentier. Un chemin accessible aux vélos n’est pas nécessairement accessible aux motos.
+Le calcul utilise la bibliothèque Routes de Maps JavaScript et le mode `TWO_WHEELER`, avec options pour éviter les grands axes et les péages. La disponibilité varie selon la région et le mode deux-roues est en bêta. **Au 3 novembre 2026, la Belgique ne figure pas dans la couverture publiée par Google pour ce mode** : le calcul moto ne sera donc pas disponible localement avec cette API tant que la couverture n’évolue pas. Dans les régions couvertes, le service calcule un itinéraire routier pour deux-roues ; il ne fournit pas une base de pistes motocross et ne vérifie pas les droits de passage sur les chemins. L’application ne certifie donc ni la légalité ni l’état d’un sentier. Un chemin accessible aux vélos n’est pas nécessairement accessible aux motos.
 
 ## Fonctions
 
