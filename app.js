@@ -585,7 +585,7 @@ function updateNavigation(position) {
   let step = currentStep();
   if (!step) return;
   let distance = state.map.distance([point.lat, point.lon], [step.endLocation.lat, step.endLocation.lon]);
-  const announcementIndex = state.mode === 'vtt' ? state.currentStep : state.currentStep + 1;
+  const announcementIndex = state.mode === 'moto' ? state.currentStep + 1 : state.currentStep;
   if (distance <= 150) announceStep(announcementIndex);
   if (distance < 35 && state.currentStep < steps.length - 1) {
     state.currentStep++; step = currentStep();
@@ -756,7 +756,6 @@ $('#save-route-server').addEventListener('click', saveRouterSettings);
 $('#route-button').addEventListener('click', () => calculateRoute());
 $('#use-location').addEventListener('click', useCurrentLocation);
 $('#center-map').addEventListener('click', centerMap);
-$('#map-style-toggle-home').addEventListener('click', () => useBasemap(state.mapStyle !== 'satellite'));
 $('#start-navigation').addEventListener('click', startNavigation);
 $('#stop-navigation').addEventListener('click', stopNavigation);
 $('#voice-toggle').addEventListener('click', toggleVoice);
