@@ -190,7 +190,7 @@ h1 em{color:var(--mode-strong);transition:color .25s ease}
 /* Three cutouts sit inside the heading block as a welcoming mode montage. */
 .hero-title{margin:15px 0 10px}
 .hero-title h1{font-size:clamp(36px,3.6vw,54px);line-height:.98;letter-spacing:-.065em;margin:0}
-.title-clipart-mix{height:106px;max-width:310px;margin:1px auto 6px;display:flex;justify-content:center;align-items:flex-end;isolation:isolate}
+.title-clipart-mix{position:relative;height:106px;max-width:310px;margin:1px auto 6px;display:flex;justify-content:center;align-items:flex-end;isolation:isolate}
 .title-clipart-mix img{position:relative;z-index:1;width:108px;height:99px;object-fit:contain;margin:0 -12px;filter:drop-shadow(0 8px 9px rgba(25,37,28,.13))}
 .title-clipart-mix .title-family{z-index:3;width:116px;height:98px}
 .title-clipart-mix .title-vtt{z-index:2;transform:translateY(2px)}
