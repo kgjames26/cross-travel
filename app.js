@@ -553,10 +553,12 @@ function updateNavigation(position) {
     : remainingMeters === 0 ? 'Arrivée' : 'Calcul en cours';
   $('#nav-gps-status').textContent = (state.currentSpeedKmh >= 1.5 ? 'En mouvement' : 'À l’arrêt') + ' · GPS ±' + Math.round(accuracy) + ' m';
   const arrowHeading = state.navigationHeading ?? state.lastMapBearing;
+  // Flèche directionnelle évidée, inspirée de l’icône GPS fournie.
   const arrowPoints = [
-    offsetPointMeters(point, 20, arrowHeading),
-    offsetPointMeters(point, 11, arrowHeading + 145),
-    offsetPointMeters(point, 11, arrowHeading + 215)
+    offsetPointMeters(point, 26, arrowHeading),
+    offsetPointMeters(point, 15, arrowHeading + 145),
+    offsetPointMeters(point, 5, arrowHeading + 180),
+    offsetPointMeters(point, 15, arrowHeading + 215)
   ];
   const arrowStyle = {
     color: '#fff', weight: 3,
