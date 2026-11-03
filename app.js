@@ -306,7 +306,7 @@ async function requestBRouter(origin, destination) {
   const params = new URLSearchParams({
     lonlats: `${origin.lon},${origin.lat}|${destination.lon},${destination.lat}`,
     profile: 'mtb', alternativeidx: '0', format: 'geojson',
-    'profile:path_preference': state.mode === 'family' ? '100' : $('#favor-trails').checked ? '80' : '20',
+    'profile:path_preference': state.mode === 'family' ? '300' : $('#favor-trails').checked ? '80' : '20',
     'profile:cycleroutes_pref': state.mode === 'family' ? '5.0' : $('#favor-trails').checked ? '3.0' : '0.2',
     'profile:hills': state.mode === 'family' ? '2' : '0',
     'profile:avoid_unsafe': '1'
@@ -357,7 +357,7 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
     drawRoute(); showRoute();
     $('#map-mode-label').textContent = state.mode === 'family' ? 'OSM · CHEMINS FACILES' : state.mode === 'vtt' ? 'OSM · BROUTER · PROFIL VTT' : 'OSM · VALHALLA · PROFIL MOTO';
     $('#route-alert-text').textContent = state.mode === 'family'
-      ? 'Vélo familial : pistes cyclables et RAVeL prioritaires, fortes pentes et routes pénalisées autant que possible. Le tracé dépend des données cartographiques et des accès sur place.'
+      ? 'Vélo familial : priorité maximale aux RAVeL et pistes cyclables faciles; routes limitées aux raccordements quand aucune alternative n’existe. Le tracé dépend des données cartographiques.'
       : state.mode === 'vtt'
         ? 'VTT : priorité renforcée aux sentiers, RAVeL et voies cyclables; les routes urbaines et axes fréquentés sont fortement pénalisés quand une alternative existe.'
         : 'Motocross : chemins accessibles aux motos favorisés, rues urbaines et grands axes évités autant que possible; vérifiez toujours signalisation et autorisations.';
@@ -607,7 +607,7 @@ function setMode(mode) {
   $('#favor-trails-row').classList.toggle('hidden', state.mode === 'family');
   $('#mode-hint').textContent = state.mode === 'family' ? 'CHEMINS FACILES' : state.mode === 'vtt' ? 'VTT · CHEMINS' : 'MOTO · VALHALLA';
   $('#routing-note').textContent = state.mode === 'family'
-    ? 'Vélo familial : pistes cyclables et RAVeL fortement prioritaires; pentes fortes et routes pénalisées.'
+    ? 'Vélo familial : RAVeL et pistes cyclables faciles presque exclusivement; routes fortement pénalisées.'
     : state.mode === 'vtt'
       ? 'VTT : priorité forte aux sentiers et RAVeL; les routes de centre-ville sont pénalisées pour chercher un détour praticable.'
       : 'Motocross : priorité maximale aux pistes et chemins ouverts aux motos; grands axes et rues urbaines sont pénalisés, quitte à rallonger le trajet.';
