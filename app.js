@@ -334,21 +334,28 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
     if (state.mode === 'family' || state.mode === 'vtt') {
       state.route = await requestBRouter(origin, destination);
     } else {
-      const response = await fetch(state.routeServer, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json', 'X-Client-Id': 'cross-travel (github.com/kgjames26/cross-travel)'},
-        body: JSON.stringify({
-          locations: [{lat: origin.lat, lon: origin.lon, type: 'break'}, {lat: destination.lat, lon: destination.lon, type: 'break'}],
-          alternates: state.mode === 'moto' && state.seekIntense ? 5 : 0,
-          costing: state.mode === 'moto' ? 'motorcycle' : 'bicycle',
-          costing_options: state.mode === 'moto'
-            ? {motorcycle: {use_highways: 0, use_trails: state.seekIntense ? 1 : 0.8}}
-            : {bicycle: {bicycle_type: 'road', cycling_speed: 25, use_roads: 1, use_hills: 1, use_ferries: 0.3, use_living_streets: 0, avoid_bad_surfaces: 0.85}},
-          directions_options: {units: 'kilometers', language: 'fr-FR'},
-          shape_format: 'geojson'
-        })
-      });
-      const payload = await response.json();
+      const motoSensations = state.mode === 'moto' && state.seekIntense;
+      const routeRequest = {
+        locations: [{lat: origin.lat, lon: origin.lon, type: 'break'}, {lat: destination.lat, lon: destination.lon, type: 'break'}],
+        alternates: motoSensations ? 5 : 0,
+        costing: state.mode === 'moto' ? 'motorcycle' : 'bicycle',
+        costing_options: state.mode === 'moto'
+          ? {motorcycle: motoSensations
+            ? {use_highways: 0, use_trails: 1, use_paved: 0.1, include_dirt_roads: true}
+            : {use_highways: 0, use_trails: 0.8}}
+          : {bicycle: {bicycle_type: 'road', cycling_speed: 25, use_roads: 1, use_hills: 1, use_ferries: 0.3, use_living_streets: 0, avoid_bad_surfaces: 0.85}},
+        directions_options: {units: 'kilometers', language: 'fr-FR'},
+        shape_format: 'geojson'
+      };
+      const routeHeaders = {'Content-Type': 'application/json', 'X-Client-Id': 'cross-travel (github.com/kgjames26/cross-travel)'};
+      let response = await fetch(state.routeServer, {method: 'POST', headers: routeHeaders, body: JSON.stringify(routeRequest)});
+      let payload = await response.json().catch(() => ({}));
+      if (!response.ok && motoSensations) {
+        // Retry with documented motorcycle options if this Valhalla server rejects the experimental keys.
+        routeRequest.costing_options.motorcycle = {use_highways: 0, use_trails: 1};
+        response = await fetch(state.routeServer, {method: 'POST', headers: routeHeaders, body: JSON.stringify(routeRequest)});
+        payload = await response.json().catch(() => ({}));
+      }
       if (!response.ok) throw new Error(payload.error || payload.status_message || `Erreur du moteur Valhalla (${response.status}).`);
       if (state.mode === 'moto' && state.seekIntense) {
         const variants = [payload.trip, ...(payload.alternates || []).map(alternative => alternative.trip || alternative)]
