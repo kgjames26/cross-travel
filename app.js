@@ -324,7 +324,6 @@ async function requestBRouter(origin, destination) {
 
 
 async function calculateRoute(fromOverride = null, toOverride = null) {
-  if (state.mode === 'moto') { toast('Le mode motocross est réservé aux circuits privés ou explicitement autorisés.'); return; }
   const button = $('#route-button'); button.disabled = true;
   button.querySelector('span').textContent = 'Calcul en cours…';
   try {
@@ -340,8 +339,10 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
         headers: {'Content-Type': 'application/json', 'X-Client-Id': 'cross-travel (github.com/kgjames26/cross-travel)'},
         body: JSON.stringify({
           locations: [{lat: origin.lat, lon: origin.lon, type: 'break'}, {lat: destination.lat, lon: destination.lon, type: 'break'}],
-          costing: 'bicycle',
-          costing_options: {bicycle: {bicycle_type: 'road', cycling_speed: 25, use_roads: 1, use_hills: 1, use_ferries: 0.3, use_living_streets: 0, avoid_bad_surfaces: 0.85}},
+          costing: state.mode === 'moto' ? 'motorcycle' : 'bicycle',
+          costing_options: state.mode === 'moto'
+            ? {motorcycle: {use_highways: 0, use_trails: 0.65}}
+            : {bicycle: {bicycle_type: 'road', cycling_speed: 25, use_roads: 1, use_hills: 1, use_ferries: 0.3, use_living_streets: 0, avoid_bad_surfaces: 0.85}},
           directions_options: {units: 'kilometers', language: 'fr-FR'},
           shape_format: 'geojson'
         })
@@ -354,13 +355,15 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
     state.lastSpokenStep = -1;
     state.routeStartDistanceTravelled = state.distanceTravelledMeters;
     drawRoute(); showRoute();
-    $('#map-mode-label').textContent = state.mode === 'family' ? 'OSM · RAVeL & CHEMINS' : state.mode === 'road' ? 'OSM · VÉLO DE ROUTE · RAPIDE' : state.mode === 'vtt' ? 'OSM · BROUTER · PROFIL VTT' : 'MOTOCROSS · CIRCUIT AUTORISÉ UNIQUEMENT';
+    $('#map-mode-label').textContent = state.mode === 'family' ? 'OSM · RAVeL & CHEMINS' : state.mode === 'road' ? 'OSM · VÉLO DE ROUTE · RAPIDE' : state.mode === 'vtt' ? 'OSM · BROUTER · PROFIL VTT' : 'OSM · MOTO · PETITES ROUTES';
     $('#route-alert-text').textContent = state.mode === 'family'
       ? 'Vélo familial : RAVeL balisés prioritaires; voies cyclables en bord de route fortement pénalisées. Les routes ne servent qu’aux raccordements nécessaires.'
       : state.mode === 'road'
         ? 'Vélo de route : trajet rapide sur routes adaptées et pistes cyclables; surfaces peu roulantes pénalisées.'
-        : state.seekIntense ? 'VTT sensations : le calcul cherche des sentiers plus engagés et accepte les détours. Vérifiez le niveau technique et l’accès.' : 'VTT : priorité aux sentiers, RAVeL et voies cyclables; les routes fréquentées sont pénalisées.';
-    const wikilocQuery = encodeURIComponent(`${$('#origin-input').value} ${$('#destination-input').value} ${state.mode === 'family' ? 'vélo familial RAVeL' : state.mode === 'road' ? 'vélo de route' : 'VTT'}`);
+        : state.mode === 'moto'
+          ? 'Moto homologuée : priorité aux routes secondaires, grands axes évités. Le calcul suit les accès motos connus dans OpenStreetMap.'
+          : state.seekIntense ? 'VTT sensations : le calcul cherche des sentiers plus engagés et accepte les détours. Vérifiez le niveau technique et l’accès.' : 'VTT : priorité aux sentiers, RAVeL et voies cyclables; les routes fréquentées sont pénalisées.';
+    const wikilocQuery = encodeURIComponent(`${$('#origin-input').value} ${$('#destination-input').value} ${state.mode === 'family' ? 'vélo familial RAVeL' : state.mode === 'road' ? 'vélo de route' : state.mode === 'moto' ? 'moto' : 'VTT'}`);
     $('#wikiloc-link').href = `https://www.wikiloc.com/search?query=${wikilocQuery}`;
     if (state.watchId !== null) {
       if (state.mode === 'moto') announceStep(0);
@@ -370,7 +373,7 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
   } catch (error) {
     toast(error.message || 'Le calcul a échoué. Vérifiez le serveur et la connexion.');
   } finally {
-    button.disabled = state.mode === 'moto'; button.querySelector('span').textContent = state.mode === 'family' ? 'Calculer mon itinéraire familial' : state.mode === 'road' ? 'Calculer l’itinéraire rapide' : state.mode === 'moto' ? 'Circuit autorisé uniquement' : `Calculer mon itinéraire ${state.mode === 'vtt' ? 'VTT' : 'moto'}`;
+    button.disabled = false; button.querySelector('span').textContent = state.mode === 'family' ? 'Calculer mon itinéraire familial' : state.mode === 'road' ? 'Calculer l’itinéraire rapide' : state.mode === 'moto' ? 'Calculer mon itinéraire moto' : 'Calculer mon itinéraire VTT';
   }
 }
 
@@ -519,14 +522,13 @@ function updateNavigation(position) {
   }
 }
 async function startNavigation() {
-  if (state.mode === 'moto') { toast('Navigation motocross limitée aux circuits privés ou explicitement autorisés.'); return; }
   if (!state.route) { toast('Calculez d’abord un itinéraire.'); return; }
   if (!navigator.geolocation) { toast('La géolocalisation n’est pas disponible sur cet appareil.'); return; }
   $('#nav-panel').classList.remove('hidden');
   document.body.classList.add('nav-active');
-  $('#map-mode-label').textContent = 'NAVIGATION ' + (state.mode === 'family' ? 'VÉLO FAMILIAL' : state.mode === 'road' ? 'VÉLO DE ROUTE' : 'VTT') + ' ACTIVE';
-  $('#nav-mode-pill').textContent = (state.mode === 'family' ? 'VÉLO FAMILIAL · RAVeL' : state.mode === 'road' ? 'VÉLO DE ROUTE' : 'VTT') + ' · GPS ACTIF';
-  $('#nav-rider-image').src = state.mode === 'family' ? 'assets/velo-familial.webp' : state.mode === 'road' ? 'assets/velo-route.webp' : 'assets/vtt-dynamique.webp';
+  $('#map-mode-label').textContent = 'NAVIGATION ' + (state.mode === 'family' ? 'VÉLO FAMILIAL' : state.mode === 'road' ? 'VÉLO DE ROUTE' : state.mode === 'moto' ? 'MOTOCROSS' : 'VTT') + ' ACTIVE';
+  $('#nav-mode-pill').textContent = (state.mode === 'family' ? 'VÉLO FAMILIAL · RAVeL' : state.mode === 'road' ? 'VÉLO DE ROUTE' : state.mode === 'moto' ? 'MOTOCROSS · PETITES ROUTES' : 'VTT') + ' · GPS ACTIF';
+  $('#nav-rider-image').src = state.mode === 'family' ? 'assets/velo-familial.webp' : state.mode === 'road' ? 'assets/velo-route.webp' : state.mode === 'moto' ? 'assets/motocross-calme.webp' : 'assets/vtt-dynamique.webp';
   state.distanceTravelledMeters = 0; state.movingDistanceMeters = 0; state.movingSeconds = 0;
   state.currentSpeedKmh = 0; state.previousGpsSample = null; state.routeStartDistanceTravelled = 0;
   state.lastSpokenStep = -1;
@@ -548,7 +550,7 @@ async function stopNavigation() {
   document.body.classList.remove('nav-active');
   if (window.speechSynthesis) window.speechSynthesis.cancel();
   if (state.wakeLock) { try { await state.wakeLock.release(); } catch {} state.wakeLock = null; }
-  $('#nav-panel').classList.add('hidden'); $('#map-mode-label').textContent = state.mode === 'family' ? 'OSM · RAVeL & CHEMINS' : state.mode === 'road' ? 'OSM · VÉLO DE ROUTE · RAPIDE' : state.mode === 'vtt' ? 'OSM · ROUTE VTT' : 'MOTOCROSS · CIRCUIT AUTORISÉ UNIQUEMENT';
+  $('#nav-panel').classList.add('hidden'); $('#map-mode-label').textContent = state.mode === 'family' ? 'OSM · RAVeL & CHEMINS' : state.mode === 'road' ? 'OSM · VÉLO DE ROUTE · RAPIDE' : state.mode === 'vtt' ? 'OSM · ROUTE VTT' : 'OSM · MOTO · PETITES ROUTES';
   toast('Navigation terminée.');
 }
 
@@ -607,16 +609,16 @@ function setMode(mode) {
   $('#favor-trails-row').classList.toggle('hidden', state.mode === 'family' || state.mode === 'road');
   $('#sensation-row').classList.toggle('hidden', state.mode !== 'vtt' && state.mode !== 'moto');
   $('#seek-intense').checked = state.seekIntense;
-  $('#mode-hint').textContent = state.mode === 'family' ? 'RAVeL · PENTES DOUCES' : state.mode === 'road' ? 'ROUTES · RAPIDE' : state.mode === 'vtt' ? state.seekIntense ? 'VTT · SENSATIONS' : 'VTT · CHEMINS' : state.seekIntense ? 'MOTO · SENSATIONS' : 'MOTO · CIRCUIT AUTORISÉ';
+  $('#mode-hint').textContent = state.mode === 'family' ? 'RAVeL · PENTES DOUCES' : state.mode === 'road' ? 'ROUTES · RAPIDE' : state.mode === 'vtt' ? state.seekIntense ? 'VTT · SENSATIONS' : 'VTT · CHEMINS' : state.seekIntense ? 'MOTO · SENSATIONS' : 'MOTO · PETITES ROUTES';
   $('#routing-note').textContent = state.mode === 'family'
     ? 'Vélo familial : RAVeL balisés prioritaires; voies cyclables en bord de route fortement pénalisées. Les routes ne servent qu’aux raccordements nécessaires.'
     : state.mode === 'road'
       ? 'Vélo de route : itinéraire le plus rapide possible sur routes adaptées et pistes cyclables, avec préférence pour les surfaces roulantes.'
       : state.mode === 'vtt'
         ? state.seekIntense ? 'VTT sensations : les chemins plus engagés sont favorisés, avec des détours acceptés.' : 'VTT : priorité forte aux sentiers et RAVeL; les routes de centre-ville sont pénalisées.'
-        : 'Motocross : calcul désactivé sur les voies publiques et chemins non autorisés. Utilisez uniquement un circuit privé ou explicitement autorisé.';
-  $('#route-button').disabled = state.mode === 'moto';
-  $('#route-button span').textContent = state.mode === 'family' ? 'Calculer mon itinéraire familial' : state.mode === 'road' ? 'Calculer l’itinéraire rapide' : state.mode === 'moto' ? 'Circuit autorisé uniquement' : `Calculer mon itinéraire VTT`;
+        : 'Moto homologuée : petites routes et axes calmes privilégiés; le calcul respecte les accès moto cartographiés.';
+  $('#route-button').disabled = false;
+  $('#route-button span').textContent = state.mode === 'family' ? 'Calculer mon itinéraire familial' : state.mode === 'road' ? 'Calculer l’itinéraire rapide' : state.mode === 'moto' ? 'Calculer mon itinéraire moto' : 'Calculer mon itinéraire VTT';
 }
 
 function beginMapPick(target) {
