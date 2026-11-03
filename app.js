@@ -732,6 +732,16 @@ document.addEventListener('visibilitychange', async () => {
   }
 });
 
+
+const arrivalIntro = $('#arrival-intro');
+if (arrivalIntro) {
+  const removeArrivalIntro = () => arrivalIntro.remove();
+  arrivalIntro.addEventListener('animationend', event => {
+    if (event.animationName === 'arrival-intro-exit') removeArrivalIntro();
+  });
+  window.setTimeout(removeArrivalIntro, 2800);
+}
+
 renderSaved();
 setMode(state.mode);
 updateVoiceButton();
