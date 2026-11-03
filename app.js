@@ -311,23 +311,22 @@ async function requestBRouter(origin, destination) {
     profile: familyFast ? 'fastbike-verylowtraffic' : 'mtb',
     alternativeidx: '0', format: 'geojson'
   });
-  if (familyFast) {
-    params.set('profile:consider_traffic', 'true');
-    params.set('profile:allow_motorways', 'false');
-    params.set('profile:consider_town', 'true');
-  } else {
+  if (!familyFast) {
     params.set('profile:path_preference', state.mode === 'family' ? '100' : state.seekIntense ? '160' : $('#favor-trails').checked ? '80' : '20');
-    params.set('profile:cycleroutes_pref', state.mode === 'family' ? '0.5' : state.mode === 'vtt' && state.seekIntense ? '0.2' : $('#favor-trails').checked ? '3.0' : '0.2');
+    params.set('profile:cycleroutes_pref', state.mode === 'family' ? '1.0' : state.mode === 'vtt' && state.seekIntense ? '0.2' : $('#favor-trails').checked ? '3.0' : '0.2');
     params.set('profile:MTB_factor', state.mode === 'vtt' && state.seekIntense ? '2.0' : '0.0');
     params.set('profile:isbike_for_mainroads', state.mode === 'family' ? '0' : '1');
     params.set('profile:hills', state.mode === 'family' ? '2' : '0');
     params.set('profile:avoid_unsafe', '1');
   }
   const response = await fetch(`${BROUTER_URL}?${params}`);
-  const text = await response.text();
+  const responseText = await response.text();
   let payload;
-  try { payload = JSON.parse(text); } catch { payload = {}; }
-  if (!response.ok) throw new Error(payload.error || `Erreur du moteur BRouter (${response.status}).`);
+  try { payload = JSON.parse(responseText); } catch { payload = {}; }
+  if (!response.ok) {
+    const detail = payload.error || responseText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 180);
+    throw new Error(detail || `Erreur du moteur BRouter (${response.status}).`);
+  }
   return normalizeBRouter(payload);
 }
 
@@ -350,21 +349,15 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
         costing: state.mode === 'moto' ? 'motorcycle' : 'bicycle',
         costing_options: state.mode === 'moto'
           ? {motorcycle: motoSensations
-            ? {use_highways: 0, use_trails: 1, use_paved: 0.1, include_dirt_roads: true}
-            : {use_highways: 0, use_trails: 0.8}}
-          : {bicycle: {bicycle_type: 'road', cycling_speed: 25, use_roads: 1, use_hills: 1, use_ferries: 0.3, use_living_streets: 0, avoid_bad_surfaces: 0.85}},
+            ? {use_highways: 0, use_trails: 1, use_tolls: $('#avoid-tolls').checked ? 0 : 0.5, use_living_streets: 0}
+            : {use_highways: 0, use_trails: 0.8, use_tolls: $('#avoid-tolls').checked ? 0 : 0.5, use_living_streets: 0}}
+          : {bicycle: {bicycle_type: 'road', cycling_speed: 25, use_roads: 1, use_hills: 1, use_ferry: 0.3, use_living_streets: 0, avoid_bad_surfaces: 0.85}},
         directions_options: {units: 'kilometers', language: 'fr-FR'},
         shape_format: 'geojson'
       };
       const routeHeaders = {'Content-Type': 'application/json', 'X-Client-Id': 'cross-travel (github.com/kgjames26/cross-travel)'};
-      let response = await fetch(state.routeServer, {method: 'POST', headers: routeHeaders, body: JSON.stringify(routeRequest)});
-      let payload = await response.json().catch(() => ({}));
-      if (!response.ok && motoSensations) {
-        // Retry with documented motorcycle options if this Valhalla server rejects the experimental keys.
-        routeRequest.costing_options.motorcycle = {use_highways: 0, use_trails: 1};
-        response = await fetch(state.routeServer, {method: 'POST', headers: routeHeaders, body: JSON.stringify(routeRequest)});
-        payload = await response.json().catch(() => ({}));
-      }
+      const response = await fetch(state.routeServer, {method: 'POST', headers: routeHeaders, body: JSON.stringify(routeRequest)});
+      const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || payload.status_message || `Erreur du moteur Valhalla (${response.status}).`);
       if (state.mode === 'moto' && state.seekIntense) {
         const variants = [payload.trip, ...(payload.alternates || []).map(alternative => alternative.trip || alternative)]
