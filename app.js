@@ -307,7 +307,7 @@ async function requestBRouter(origin, destination) {
     lonlats: `${origin.lon},${origin.lat}|${destination.lon},${destination.lat}`,
     profile: 'mtb', alternativeidx: '0', format: 'geojson',
     'profile:path_preference': state.mode === 'family' ? '300' : $('#favor-trails').checked ? '80' : '20',
-    'profile:cycleroutes_pref': state.mode === 'family' ? '5.0' : $('#favor-trails').checked ? '3.0' : '0.2',
+    'profile:cycleroutes_pref': state.mode === 'family' ? '50.0' : $('#favor-trails').checked ? '3.0' : '0.2',
     'profile:hills': state.mode === 'family' ? '2' : '0',
     'profile:avoid_unsafe': '1'
   });
