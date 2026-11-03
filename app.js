@@ -576,7 +576,6 @@ function updateNavigation(position) {
     state.lastNavigationZoomAt = now;
   }
   state.map.panTo([point.lat, point.lon], {animate: false});
-  const now = Date.now();
   const routePoints = state.routeLayer?.getLatLngs() || [];
   let nearestRouteDistance = Infinity;
   const sampleEvery = Math.max(1, Math.floor(routePoints.length / 250));
