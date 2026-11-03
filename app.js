@@ -63,6 +63,7 @@ function useBasemap(style, announce = false) {
   const nextStyle = style === true || style === 'satellite' ? 'satellite' : 'osm';
   state.mapStyle = nextStyle;
   state.satelliteErrors = 0;
+  state.satelliteLoaded = false;
   clearTimeout(state.satelliteLoadTimer);
   for (const layer of [state.streetLayer, state.satelliteLayer]) {
     if (state.map.hasLayer(layer)) state.map.removeLayer(layer);
@@ -82,8 +83,8 @@ function useBasemap(style, announce = false) {
 }
 function updateMapBearing(position) {
   if (typeof state.map?.setBearing !== 'function') return;
-  const reported = Number(position.coords.heading);
-  let heading = Number.isFinite(reported) && reported >= 0 ? reported : null;
+  const reported = position.coords.heading;
+  let heading = typeof reported === "number" && Number.isFinite(reported) && reported >= 0 ? reported : null;
   if (heading === null && state.previousGpsSample && state.currentSpeedKmh >= 3) {
     const a = state.previousGpsSample.point, b = {lat: position.coords.latitude, lon: position.coords.longitude};
     const radians = Math.PI / 180;
@@ -91,7 +92,7 @@ function updateMapBearing(position) {
     const x = Math.cos(a.lat * radians) * Math.sin(b.lat * radians) - Math.sin(a.lat * radians) * Math.cos(b.lat * radians) * Math.cos((b.lon - a.lon) * radians);
     heading = (Math.atan2(y, x) / radians + 360) % 360;
   }
-  if (heading === null) return;
+  if (heading === null || state.currentSpeedKmh < 1.5) return;
   const difference = ((heading - state.lastMapBearing + 540) % 360) - 180;
   if (Math.abs(difference) < 4) return;
   state.lastMapBearing = (state.lastMapBearing + difference * 0.35 + 360) % 360;
@@ -459,6 +460,7 @@ function updateNavigation(position) {
     state.movingSeconds += elapsedSeconds;
     state.movingDistanceMeters += hasMoved ? deltaMeters : state.currentSpeedKmh / 3.6 * elapsedSeconds;
   }
+  updateMapBearing(position);
   state.previousGpsSample = {point, time: sampleTime};
 
   const steps = state.route.legs[0]?.steps || [];
