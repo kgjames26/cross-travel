@@ -11,7 +11,7 @@ const state = {
   familyFast: localStorage.getItem('ct_family_fast') === 'true',
   voiceEnabled: localStorage.getItem('ct_voice_enabled') !== 'false', lastSpokenStep: -1,
   distanceTravelledMeters: 0, movingDistanceMeters: 0, movingSeconds: 0,
-  currentSpeedKmh: 0, previousGpsSample: null, routeStartDistanceTravelled: 0, lastHeading: null, lastMapBearing: 0, navigationHeading: null,
+  currentSpeedKmh: 0, previousGpsSample: null, routeStartDistanceTravelled: 0, lastHeading: null, lastMapBearing: 0, navigationHeading: null, lastNavigationZoomAt: 0,
   searchTimers: {}, searchControllers: {}, suggestions: {origin: [], destination: []},
   saved: JSON.parse(localStorage.getItem('ct_saved_routes') || '[]')
 };
@@ -107,7 +107,7 @@ function initializeMap() {
   if (state.map) { state.map.invalidateSize(); return true; }
   if (!window.L) { toast('La bibliothèque de carte n’a pas pu se charger. Réessayez avec une connexion active.'); return false; }
   $('.map-panel').classList.add('map-ready');
-  state.map = L.map('map', { zoomControl: false, attributionControl: true, preferCanvas: true, rotate: true, bearing: 0, touchRotate: false })
+  state.map = L.map('map', { zoomControl: false, attributionControl: true, preferCanvas: true, rotate: true, bearing: 0, touchRotate: false, zoomSnap: 0.25 })
     .setView([50.337, 4.52], 12);
   L.control.zoom({ position: 'bottomright' }).addTo(state.map);
   state.streetLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -567,7 +567,14 @@ function updateNavigation(position) {
   };
   if (state.navigationMarker) state.navigationMarker.setLatLngs(arrowPoints);
   else state.navigationMarker = L.polygon(arrowPoints, arrowStyle).addTo(state.map);
-  if (state.map.getZoom() < 17) state.map.setZoom(18, {animate: false});
+  // Ajuste léger et progressif : zoom rapproché à basse vitesse, plus large en roulant vite.
+  const targetZoom = Math.max(17.5, Math.min(18.5, 18.5 - state.currentSpeedKmh * 0.025));
+  const currentZoom = state.map.getZoom();
+  const now = Date.now();
+  if (currentZoom < 17 || (now - state.lastNavigationZoomAt > 2200 && Math.abs(currentZoom - targetZoom) >= 0.25)) {
+    state.map.setZoom(targetZoom, {animate: currentZoom >= 17, duration: 0.65});
+    state.lastNavigationZoomAt = now;
+  }
   state.map.panTo([point.lat, point.lon], {animate: false});
   const now = Date.now();
   const routePoints = state.routeLayer?.getLatLngs() || [];
@@ -589,7 +596,7 @@ async function startNavigation() {
   $('#nav-mode-pill').textContent = (state.mode === 'family' ? state.familyFast ? 'VÉLO FAMILIAL · RAPIDE' : 'VÉLO FAMILIAL · RAVeL' : state.mode === 'road' ? 'VÉLO DE ROUTE' : state.mode === 'moto' ? 'MOTOCROSS · PETITES ROUTES' : 'VTT') + ' · GPS ACTIF';
   $('#nav-rider-image').src = state.mode === 'family' ? 'assets/velo-familial.webp' : state.mode === 'road' ? 'assets/velo-route.webp' : state.mode === 'moto' ? 'assets/motocross-calme.webp' : 'assets/vtt-dynamique.webp';
   state.distanceTravelledMeters = 0; state.movingDistanceMeters = 0; state.movingSeconds = 0;
-  state.currentSpeedKmh = 0; state.previousGpsSample = null; state.routeStartDistanceTravelled = 0; state.navigationHeading = null;
+  state.currentSpeedKmh = 0; state.previousGpsSample = null; state.routeStartDistanceTravelled = 0; state.navigationHeading = null; state.lastNavigationZoomAt = 0;
   state.lastSpokenStep = -1;
   if (state.mode === 'moto') announceStep(0);
   else speakText(state.mode === 'family' ? state.familyFast ? 'Navigation vélo familial rapide démarrée. Suivez l’itinéraire.' : 'Navigation vélo familial démarrée. Suivez le RAVeL.' : state.mode === 'road' ? 'Navigation vélo de route démarrée. Suivez l’itinéraire rapide.' : 'Navigation VTT démarrée. Suivez le tracé.');
