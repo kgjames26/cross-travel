@@ -1,32 +1,30 @@
 # Cross Travel
 
-PWA en français pour préparer un itinéraire deux-roues motorisé et le suivre avec le GPS.
+PWA en français pour préparer et suivre des itinéraires moto sur une carte OpenStreetMap.
 
-## Démarrer
+## Carte et données
 
-Le site est statique : ouvrez `index.html` avec un serveur local ou déployez le dépôt avec GitHub Pages. Le service worker et les fonctions PWA nécessitent HTTPS (ou `localhost`).
+- La carte utilise Leaflet et les tuiles standards `https://tile.openstreetmap.org/{z}/{x}/{y}.png`.
+- L’attribution « © OpenStreetMap contributors » reste visible sur la carte.
+- Les tuiles ne sont pas préchargées ni mises en cache par le service worker. Les tuiles standards OSM ne sont pas fournies pour les téléchargements hors ligne; la carte demande une connexion.
+- La recherche d’adresses utilise Nominatim au moment du calcul uniquement, sans autocomplétion pendant la saisie, avec une pause entre requêtes.
 
-## Google Maps Platform
+## Calcul et navigation
 
-Dans Google Cloud Console, activez la facturation et les API **Maps JavaScript API** et **Routes API**. Créez une clé limitée aux domaines de déploiement, puis ouvrez Paramètres dans Cross Travel et collez cette clé. Elle est stockée dans le stockage local de ce navigateur uniquement. Les requêtes Maps et Routes sont soumises aux tarifs, quotas et conditions Google.
+Le calcul utilise le moteur de routage Valhalla avec le profil moto `motorcycle`. Le réglage « Favoriser pistes et chemins » ajuste `use_trails`; « Éviter les grands axes » ajuste `use_highways`. Le moteur respecte les règles d’accès présentes dans les données OpenStreetMap, mais le profil moto est en bêta et la base peut être incomplète ou ancienne. Aucun moteur ne peut garantir que le terrain, la signalisation ou une autorisation locale correspondent aux données. Vérifiez le passage avant de vous engager. Les chemins autorisés aux vélos ne sont pas automatiquement autorisés aux motos.
 
-Le calcul utilise la bibliothèque Routes de Maps JavaScript et le mode `TWO_WHEELER`, avec options pour éviter les grands axes et les péages. La disponibilité varie selon la région et le mode deux-roues est en bêta. **Au 3 novembre 2026, la Belgique ne figure pas dans la couverture publiée par Google pour ce mode** : le calcul moto ne sera donc pas disponible localement avec cette API tant que la couverture n’évolue pas. Dans les régions couvertes, le service calcule un itinéraire routier pour deux-roues ; il ne fournit pas une base de pistes motocross et ne vérifie pas les droits de passage sur les chemins. L’application ne certifie donc ni la légalité ni l’état d’un sentier. Un chemin accessible aux vélos n’est pas nécessairement accessible aux motos.
+Le serveur public par défaut est `https://valhalla1.openstreetmap.de/route`. Il est fourni sans engagement de disponibilité ni de capacité. Pour un usage régulier ou public, configurez une instance Valhalla que vous contrôlez ou un fournisseur adapté. L’adresse du moteur peut être remplacée dans **Paramètres**.
 
-## Fonctions
+La recherche d’adresse appelle le service public Nominatim. Elle se déclenche uniquement lors du calcul et respecte une cadence faible; ses règles d’usage et limites peuvent évoluer.
 
-- Carte Google Maps, recherche de départ/arrivée par adresse, sélection de points sur la carte et départ depuis la position GPS.
-- Calcul d’itinéraire deux-roues, évitement des grands axes et péages.
-- Navigation GPS, instructions de direction, recentrage, recalcul après écart et verrouillage d’écran lorsque le navigateur le permet.
-- Enregistrement local des parcours favoris.
-- Cache de l’interface pour ouverture hors ligne. La carte et le calcul nécessitent une connexion et restent soumis aux règles Google Maps.
-- Installation comme PWA sur les navigateurs compatibles.
+Fonctions incluses : choix des points par adresse, position GPS ou clic sur carte; calcul et affichage de route; instructions en direct; recalcul après écart; écran allumé si le navigateur permet Wake Lock; favoris stockés localement; interface installable comme PWA.
 
-## Déploiement GitHub Pages
+## Lancer et publier
 
-Le workflow `.github/workflows/pages.yml` publie le contenu statique sur GitHub Pages à chaque mise à jour de `main`. Dans les réglages du dépôt, définissez **Pages → Build and deployment → Source: GitHub Actions** si le dépôt ne l’a pas déjà activé. Ensuite, configurez le domaine d’autorisation de la clé Google avec l’URL GitHub Pages.
+Application statique sans compilation. Pour le développement local, servez le dossier sur `localhost`; les fonctions PWA et GPS demandent HTTPS (ou `localhost`). Le workflow `.github/workflows/pages.yml` publie le site sur GitHub Pages après activation de **Settings → Pages → Build and deployment → GitHub Actions**.
 
-## Limites et prudence
+Les fichiers de l’application sont servis depuis GitHub Pages. Leaflet, les tuiles OSM, Nominatim et Valhalla sont des services externes; la carte et le calcul nécessitent une connexion. Le service worker met en cache uniquement l’interface Cross Travel.
 
-- Ce prototype n’a pas de fournisseur de données validées sur l’accès légal des motos aux chemins forestiers ou ruraux.
-- Ne suivez pas une route sans vérifier la signalisation et les règles locales. Les routes générées sont indicatives et peuvent être inadaptées à l’état du terrain.
-- Le GPS, l’écran allumé, la couverture réseau, la précision des instructions et l’autonomie dépendent du téléphone et du navigateur. Ne manipulez pas l’écran en roulant.
+## Vie privée et prudence
+
+Les favoris et la configuration du moteur restent dans le stockage local du navigateur. Les coordonnées nécessaires à la recherche et au calcul sont envoyées à Nominatim et au serveur Valhalla configuré. Ne manipulez pas l’écran en roulant.

@@ -7,7 +7,9 @@
   <meta name="description" content="Préparez et suivez vos itinéraires moto avec Cross Travel.">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="osm.css">
   <title>Cross Travel — itinéraires moto</title>
 </head>
 <body>
@@ -38,19 +40,19 @@
             <label class="location-field"><span class="location-dot end-dot"></span><span class="field-copy"><span>Arrivée</span><input id="destination-input" autocomplete="off" placeholder="Où souhaitez-vous aller ?" aria-label="Point d’arrivée"></span></label>
           </div>
           <div class="preferences">
-            <div class="preferences-head"><span>Préférences</span><span class="preferences-hint">MOTO · ROUTE INDICATIVE</span></div>
+            <div class="preferences-head"><span>Préférences</span><span class="preferences-hint">MOTO · OSM</span></div>
             <label class="check-row"><input type="checkbox" id="avoid-highways" checked><span class="custom-check"></span><span>Éviter les grands axes</span></label>
             <label class="check-row"><input type="checkbox" id="avoid-tolls" checked><span class="custom-check"></span><span>Éviter les péages</span></label>
-            <label class="check-row disabled-check" title="Google ne fournit pas ici de statut légal fiable pour les sentiers."><input type="checkbox" disabled><span class="custom-check"></span><span>Chemins hors route vérifiés</span><span class="soon-tag">INDISPONIBLE</span></label>
+            <label class="check-row"><input type="checkbox" id="favor-trails" checked><span class="custom-check"></span><span>Favoriser pistes et chemins</span><span class="soon-tag">SELON ACCÈS OSM</span></label>
           </div>
           <button class="primary-button" id="route-button"><span>Calculer mon itinéraire</span><svg viewBox="0 0 24 24"><path d="M5 12h13m-5-5 5 5-5 5"/></svg></button>
-          <p class="api-note" id="api-note"><span class="note-icon">i</span> Carte Google Maps : ajoutez votre clé API dans les paramètres. Au 3 novembre 2026, le mode moto Google ne couvre pas la Belgique.</p>
+          <p class="api-note" id="api-note"><span class="note-icon">i</span> Carte OpenStreetMap et moteur moto Valhalla. Les chemins hors route dépendent des données OSM et restent à vérifier sur place.</p>
         </div>
 
         <div class="route-result hidden" id="route-result">
           <div class="result-head"><div><span class="section-kicker">ITINÉRAIRE CALCULÉ</span><h2 id="route-title">Votre parcours</h2></div><button class="text-button" id="save-route">＋ Enregistrer</button></div>
           <div class="metrics"><div><strong id="route-distance">—</strong><span>DISTANCE</span></div><div><strong id="route-duration">—</strong><span>DURÉE ESTIMÉE</span></div><div><strong id="route-steps-count">—</strong><span>ÉTAPES</span></div></div>
-          <div class="route-alert"><span class="alert-symbol">!</span><span>Mode deux-roues Google en bêta : parcours routier indicatif. Accès et légalité des chemins non vérifiés.</span></div>
+          <div class="route-alert"><span class="alert-symbol">!</span><span>Profil moto Valhalla en bêta. L’accès s’appuie sur les attributs OSM connus; vérifiez la signalisation et l’autorisation réelle.</span></div>
           <button class="primary-button start-button" id="start-navigation"><span>Démarrer la navigation</span><svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"/></svg></button>
         </div>
 
@@ -66,7 +68,7 @@
         <div id="map" class="map-canvas" role="application" aria-label="Carte interactive"></div>
         <div id="map-placeholder" class="map-placeholder">
           <div class="map-grid"></div><div class="contour contour-one"></div><div class="contour contour-two"></div><div class="map-road road-one"></div><div class="map-road road-two"></div><div class="map-road road-three"></div>
-          <div class="map-placeholder-content"><span class="map-pin">⌖</span><strong>Votre terrain de jeu commence ici</strong><span>La carte s’affichera après la configuration de Google Maps.</span><button id="map-settings" class="outline-button">Configurer la carte</button></div>
+          <div class="map-placeholder-content"><span class="map-pin">⌖</span><strong>Votre terrain de jeu commence ici</strong><span>Chargement de la carte OpenStreetMap…</span><button id="map-settings" class="outline-button">Réessayer</button></div>
           <span class="map-label label-one">FORÊT DE GOUGNIES</span><span class="map-label label-two">RAVeL</span><span class="map-label label-three">GÉRPINNES</span>
         </div>
         <div class="map-top-controls"><div class="map-badge"><span class="map-badge-dot"></span><span id="map-mode-label">CARTE DE REPÉRAGE</span></div><button class="map-control" id="center-map" title="Centrer sur ma position" aria-label="Centrer sur ma position">◎</button></div>
@@ -76,7 +78,6 @@
           <div class="nav-progress"><span id="nav-progress-bar"></span></div><div class="nav-footer"><span id="nav-remaining">— restant</span><span id="nav-step-count">Étape —</span></div>
         </div>
         <div class="map-legend"><span><i class="legend-route"></i> Parcours calculé</span><span><i class="legend-unknown"></i> Statut d’accès non vérifié</span></div>
-        <div class="map-attribution">Fond de carte © Google Maps</div>
       </section>
     </main>
 
@@ -84,11 +85,12 @@
   </div>
 
   <div class="modal-backdrop hidden" id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-    <div class="modal"><button class="modal-close" data-close="settings-modal" aria-label="Fermer">×</button><span class="section-kicker">CONFIGURATION</span><h2 id="settings-title">Connecter Google Maps</h2><p>Entrez une clé API Google Maps Platform autorisée pour les API Maps JavaScript et Routes. La clé est conservée uniquement dans ce navigateur.</p><label class="modal-label" for="api-key-input">Clé API</label><input id="api-key-input" class="modal-input" type="password" placeholder="AIza…" autocomplete="off"><div class="modal-actions"><button class="secondary-button" data-close="settings-modal">Annuler</button><button class="primary-button compact" id="save-api-key">Enregistrer et charger</button></div><p class="small-print">Google Routes peut proposer un itinéraire pour deux-roues motorisé dans les régions couvertes. Cela ne garantit ni l’accès aux sentiers, ni leur état, ni leur légalité. La clé peut entraîner une facturation Google selon votre configuration.</p></div>
+    <div class="modal"><button class="modal-close" data-close="settings-modal" aria-label="Fermer">×</button><span class="section-kicker">CONFIGURATION</span><h2 id="settings-title">Moteur d’itinéraire OSM</h2><p>La carte utilise les tuiles OpenStreetMap. Le calcul moto passe par Valhalla, un moteur de routage fondé sur les données OSM.</p><label class="modal-label" for="route-server-input">Adresse du moteur Valhalla</label><input id="route-server-input" class="modal-input" type="url" placeholder="https://valhalla1.openstreetmap.de/route" autocomplete="url"><div class="modal-actions"><button class="secondary-button" data-close="settings-modal">Annuler</button><button class="primary-button compact" id="save-route-server">Enregistrer</button></div><p class="small-print">Le serveur public est fourni sans garantie de disponibilité. L’attribution OSM reste affichée sur la carte. Les tuiles ne sont pas téléchargées pour un usage hors ligne. Les données d’accès peuvent être incomplètes ou anciennes.</p></div>
   </div>
   <div class="modal-backdrop hidden" id="saved-modal" role="dialog" aria-modal="true" aria-labelledby="saved-title"><div class="modal"><button class="modal-close" data-close="saved-modal" aria-label="Fermer">×</button><span class="section-kicker">COLLECTION</span><h2 id="saved-title">Parcours enregistrés</h2><div id="saved-modal-list" class="saved-list modal-saved-list"></div></div></div>
-  <div class="modal-backdrop hidden" id="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title"><div class="modal"><button class="modal-close" data-close="help-modal" aria-label="Fermer">×</button><span class="section-kicker">INFORMATIONS IMPORTANTES</span><h2 id="help-title">Ce que Cross Travel garantit</h2><p>Cross Travel utilise l’itinéraire Google pour deux-roues motorisé lorsque le service est disponible. Ce mode est en bêta et vise les motos sur le réseau routier. Au 3 novembre 2026, la Belgique ne figure pas dans la couverture publiée par Google pour ce mode.</p><p>Il ne s’agit pas d’un moteur de recherche de pistes de motocross ou de chemins forestiers autorisés. L’application ne dispose pas encore d’une base validée de droits de passage pour les motos. Un chemin visible sur la carte, ou autorisé aux vélos, n’est pas nécessairement ouvert aux motos. Vérifiez la signalisation, les arrêtés locaux et les autorisations avant de vous engager.</p><p>Le suivi GPS et l’écran allumé dépendent de l’appareil, du navigateur, de la batterie et de la couverture réseau. Ne manipulez pas l’écran en roulant.</p></div></div>
+  <div class="modal-backdrop hidden" id="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title"><div class="modal"><button class="modal-close" data-close="help-modal" aria-label="Fermer">×</button><span class="section-kicker">INFORMATIONS IMPORTANTES</span><h2 id="help-title">Ce que Cross Travel garantit</h2><p>Cross Travel affiche les cartes OpenStreetMap et calcule un itinéraire avec le profil moto bêta de Valhalla. Le réglage pistes favorise les voies non asphaltées et les petites routes selon les attributs présents dans OpenStreetMap.</p><p>Les données OSM ne constituent pas une garantie juridique ni un relevé en temps réel. Un chemin visible sur la carte, ou autorisé aux vélos, n’est pas nécessairement ouvert aux motos. Vérifiez la signalisation, les arrêtés locaux et les autorisations avant de vous engager.</p><p>Les tuiles de la carte et les itinéraires nécessitent une connexion. Le suivi GPS et l’écran allumé dépendent de l’appareil, du navigateur, de la batterie et du réseau. Ne manipulez pas l’écran en roulant.</p></div></div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="" defer></script>
   <script src="app.js" defer></script>
 </body>
 </html>
