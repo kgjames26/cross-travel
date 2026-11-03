@@ -2,14 +2,14 @@ const $ = (selector) => document.querySelector(selector);
 const DEFAULT_ROUTER = 'https://valhalla1.openstreetmap.de/route';
 const BROUTER_URL = 'https://brouter.de/brouter';
 const state = {
-  map: null, tileLayer: null, route: null, routeLayer: null, stepLayers: [], markers: [],
+  map: null, tileLayer: null, streetLayer: null, satelliteLayer: null, mapStyle: "osm", satelliteErrors: 0, satelliteLoaded: false, satelliteLoadTimer: null, route: null, routeLayer: null, stepLayers: [], markers: [],
   origin: null, destination: null, currentStep: 0, watchId: null, wakeLock: null,
   lastPosition: null, navigationMarker: null, rerouting: false, lastRerouteAt: 0,
   lastGeocodeAt: 0, routeServer: localStorage.getItem('ct_route_server') || DEFAULT_ROUTER,
   mode: localStorage.getItem('ct_mode') || 'vtt', mapPickTarget: null,
   voiceEnabled: localStorage.getItem('ct_voice_enabled') !== 'false', lastSpokenStep: -1,
   distanceTravelledMeters: 0, movingDistanceMeters: 0, movingSeconds: 0,
-  currentSpeedKmh: 0, previousGpsSample: null, routeStartDistanceTravelled: 0,
+  currentSpeedKmh: 0, previousGpsSample: null, routeStartDistanceTravelled: 0, lastHeading: null, lastMapBearing: 0,
   searchTimers: {}, searchControllers: {}, suggestions: {origin: [], destination: []},
   saved: JSON.parse(localStorage.getItem('ct_saved_routes') || '[]')
 };
@@ -58,18 +58,71 @@ function closeSuggestions(which) {
   list.classList.add('hidden'); list.replaceChildren(); state.suggestions[which] = [];
 }
 
+function useBasemap(style, announce = false) {
+  if (!state.map || !state.streetLayer || !state.satelliteLayer) return;
+  const nextStyle = style === true || style === 'satellite' ? 'satellite' : 'osm';
+  state.mapStyle = nextStyle;
+  state.satelliteErrors = 0;
+  clearTimeout(state.satelliteLoadTimer);
+  for (const layer of [state.streetLayer, state.satelliteLayer]) {
+    if (state.map.hasLayer(layer)) state.map.removeLayer(layer);
+  }
+  const layer = nextStyle === 'satellite' ? state.satelliteLayer : state.streetLayer;
+  state.tileLayer = layer;
+  layer.addTo(state.map);
+  const button = $('#map-style-toggle');
+  button.textContent = nextStyle === 'satellite' ? 'Carte OSM' : 'Satellite';
+  button.setAttribute('aria-pressed', String(nextStyle === 'satellite'));
+  if (nextStyle === 'satellite') {
+    state.satelliteLoadTimer = setTimeout(() => {
+      if (state.mapStyle === 'satellite' && !state.satelliteLoaded) useBasemap('osm', true);
+    }, 6000);
+  }
+  if (announce) toast(nextStyle === 'satellite' ? 'Imagerie satellite activée.' : 'Satellite indisponible : retour à la carte OSM.');
+}
+function updateMapBearing(position) {
+  if (typeof state.map?.setBearing !== 'function') return;
+  const reported = Number(position.coords.heading);
+  let heading = Number.isFinite(reported) && reported >= 0 ? reported : null;
+  if (heading === null && state.previousGpsSample && state.currentSpeedKmh >= 3) {
+    const a = state.previousGpsSample.point, b = {lat: position.coords.latitude, lon: position.coords.longitude};
+    const radians = Math.PI / 180;
+    const y = Math.sin((b.lon - a.lon) * radians) * Math.cos(b.lat * radians);
+    const x = Math.cos(a.lat * radians) * Math.sin(b.lat * radians) - Math.sin(a.lat * radians) * Math.cos(b.lat * radians) * Math.cos((b.lon - a.lon) * radians);
+    heading = (Math.atan2(y, x) / radians + 360) % 360;
+  }
+  if (heading === null) return;
+  const difference = ((heading - state.lastMapBearing + 540) % 360) - 180;
+  if (Math.abs(difference) < 4) return;
+  state.lastMapBearing = (state.lastMapBearing + difference * 0.35 + 360) % 360;
+  state.map.setBearing(state.lastMapBearing);
+}
 function initializeMap() {
   if (state.map) { state.map.invalidateSize(); return true; }
   if (!window.L) { toast('La bibliothèque de carte n’a pas pu se charger. Réessayez avec une connexion active.'); return false; }
   $('.map-panel').classList.add('map-ready');
-  state.map = L.map('map', { zoomControl: false, attributionControl: true, preferCanvas: true })
+  state.map = L.map('map', { zoomControl: false, attributionControl: true, preferCanvas: true, rotate: true, bearing: 0, touchRotate: false })
     .setView([50.337, 4.52], 12);
   L.control.zoom({ position: 'bottomright' }).addTo(state.map);
-  state.tileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
+  state.streetLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 20,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>'
-  }).addTo(state.map);
-  state.tileLayer.on('tileerror', () => toast('Certaines tuiles OSM ne sont pas disponibles pour le moment.'));
+  });
+  state.satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 22, maxNativeZoom: 19,
+    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'
+  });
+  state.tileLayer = state.streetLayer;
+  state.streetLayer.addTo(state.map);
+  state.streetLayer.on('tileerror', () => { if (state.mapStyle === 'osm') toast('Certaines tuiles OpenStreetMap ne sont pas disponibles.'); });
+  state.satelliteLayer.on('load', () => { state.satelliteLoaded = true; clearTimeout(state.satelliteLoadTimer); });
+  state.satelliteLayer.on('tileerror', () => {
+    if (state.mapStyle !== 'satellite') return;
+    state.satelliteErrors++;
+    if (state.satelliteErrors >= 3) useBasemap('osm', true);
+  });
+  $('#map-style-toggle').addEventListener('click', () => useBasemap(state.mapStyle !== 'satellite'));
+  useBasemap('osm', false);
   state.map.on('click', event => {
     const point = {lat: event.latlng.lat, lon: event.latlng.lng};
     const target = state.mapPickTarget || (!state.origin ? 'origin' : 'destination');
@@ -247,7 +300,7 @@ async function requestBRouter(origin, destination) {
   const params = new URLSearchParams({
     lonlats: `${origin.lon},${origin.lat}|${destination.lon},${destination.lat}`,
     profile: 'mtb', alternativeidx: '0', format: 'geojson',
-    'profile:path_preference': $('#favor-trails').checked ? '40' : '20',
+    'profile:path_preference': $('#favor-trails').checked ? '80' : '20',
     'profile:cycleroutes_pref': $('#favor-trails').checked ? '3.0' : '0.2',
     'profile:avoid_unsafe': '1'
   });
@@ -281,7 +334,7 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
         body: JSON.stringify({
           locations: [{lat: origin.lat, lon: origin.lon, type: 'break'}, {lat: destination.lat, lon: destination.lon, type: 'break'}],
           costing: 'motorcycle',
-          costing_options: {motorcycle: {use_highways: highwayPreference, use_trails: trailPreference, use_tracks: trackPreference, use_tolls: tollPreference}},
+          costing_options: {motorcycle: {use_highways: highwayPreference, use_trails: trailPreference, use_tracks: trackPreference, use_living_streets: preferPaths ? 0 : 0.5, use_tolls: tollPreference}},
           directions_options: {units: 'kilometers', language: 'fr-FR'},
           shape_format: 'geojson'
         })
@@ -296,8 +349,8 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
     drawRoute(); showRoute();
     $('#map-mode-label').textContent = state.mode === 'vtt' ? 'OSM · BROUTER · PROFIL VTT' : 'OSM · VALHALLA · PROFIL MOTO';
     $('#route-alert-text').textContent = state.mode === 'vtt'
-      ? 'Profil vélo BRouter. Il privilégie les voies cyclables et chemins, mais les données et permissions locales restent à vérifier.'
-      : 'Profil moto Valhalla en bêta. Les chemins accessibles aux VTT peuvent être interdits aux motos : vérifiez la signalisation et l’autorisation réelle.';
+      ? 'VTT : priorité renforcée aux sentiers, RAVeL et voies cyclables; les routes urbaines et axes fréquentés sont fortement pénalisés quand une alternative existe.'
+      : 'Motocross : chemins accessibles aux motos favorisés, rues urbaines et grands axes évités autant que possible; vérifiez toujours signalisation et autorisations.';
     const wikilocQuery = encodeURIComponent(`${$('#origin-input').value} ${$('#destination-input').value} ${state.mode === 'vtt' ? 'VTT' : 'enduro motocross'}`);
     $('#wikiloc-link').href = `https://www.wikiloc.com/search?query=${wikilocQuery}`;
     if (state.watchId !== null) {
@@ -440,7 +493,8 @@ function updateNavigation(position) {
   $('#nav-gps-status').textContent = (state.currentSpeedKmh >= 1.5 ? 'En mouvement' : 'À l’arrêt') + ' · GPS ±' + Math.round(accuracy) + ' m';
   if (state.navigationMarker) state.navigationMarker.setLatLng([point.lat, point.lon]);
   else state.navigationMarker = L.circleMarker([point.lat, point.lon], {radius: 8, color: '#fff', weight: 3, fillColor: '#86b83e', fillOpacity: 1}).addTo(state.map);
-  state.map.panTo([point.lat, point.lon]);
+  if (state.map.getZoom() < 17) state.map.setZoom(18, {animate: false});
+  state.map.panTo([point.lat, point.lon], {animate: false});
   const now = Date.now();
   const routePoints = state.routeLayer?.getLatLngs() || [];
   let nearestRouteDistance = Infinity;
@@ -538,8 +592,8 @@ function setMode(mode) {
   document.querySelectorAll('.moto-only').forEach(node => node.classList.toggle('hidden', state.mode !== 'moto'));
   $('#mode-hint').textContent = state.mode === 'vtt' ? 'VTT · MTB' : 'MOTO · VALHALLA';
   $('#routing-note').textContent = state.mode === 'vtt'
-    ? 'BRouter MTB privilégie les sentiers et itinéraires cyclables OSM, dont les RAVeL, et augmente le coût des routes. Vérifiez le niveau et l’accès.'
-    : 'Valhalla favorise au maximum pistes et chemins accessibles aux motos, et pénalise les grands axes. Les données OSM peuvent être incomplètes.';
+    ? 'VTT : priorité forte aux sentiers et RAVeL; les routes de centre-ville sont pénalisées pour chercher un détour praticable.'
+    : 'Motocross : priorité maximale aux pistes et chemins ouverts aux motos; grands axes et rues urbaines sont pénalisés, quitte à rallonger le trajet.';
   $('#route-button span').textContent = `Calculer mon itinéraire ${state.mode === 'vtt' ? 'VTT' : 'moto'}`;
 }
 
