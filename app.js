@@ -339,9 +339,10 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
         headers: {'Content-Type': 'application/json', 'X-Client-Id': 'cross-travel (github.com/kgjames26/cross-travel)'},
         body: JSON.stringify({
           locations: [{lat: origin.lat, lon: origin.lon, type: 'break'}, {lat: destination.lat, lon: destination.lon, type: 'break'}],
+          alternates: state.mode === 'moto' && state.seekIntense ? 3 : 0,
           costing: state.mode === 'moto' ? 'motorcycle' : 'bicycle',
           costing_options: state.mode === 'moto'
-            ? {motorcycle: {use_highways: 0, use_trails: state.seekIntense ? 0.95 : 0.8}}
+            ? {motorcycle: {use_highways: 0, use_trails: state.seekIntense ? 1 : 0.8}}
             : {bicycle: {bicycle_type: 'road', cycling_speed: 25, use_roads: 1, use_hills: 1, use_ferries: 0.3, use_living_streets: 0, avoid_bad_surfaces: 0.85}},
           directions_options: {units: 'kilometers', language: 'fr-FR'},
           shape_format: 'geojson'
@@ -349,6 +350,12 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || payload.status_message || `Erreur du moteur Valhalla (${response.status}).`);
+      if (state.mode === 'moto' && state.seekIntense) {
+        const variants = [payload.trip, ...(payload.alternates || []).map(alternative => alternative.trip || alternative)]
+          .filter(trip => trip?.legs?.length);
+        variants.sort((a, b) => Number(b.summary?.length || 0) - Number(a.summary?.length || 0));
+        if (variants.length) payload.trip = variants[0];
+      }
       state.route = normalizeValhalla(payload);
     }
     state.currentStep = 0;
@@ -361,7 +368,9 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
       : state.mode === 'road'
         ? 'Vélo de route : trajet rapide sur routes adaptées et pistes cyclables; surfaces peu roulantes pénalisées.'
         : state.mode === 'moto'
-          ? 'Moto homologuée : priorité aux chemins et pistes accessibles aux motos, sans voies réservées aux vélos. Le calcul respecte les accès moto connus dans OpenStreetMap.'
+          ? state.seekIntense
+            ? 'Moto sensations : chemins accessibles aux motos favorisés au maximum; la plus longue variante trouvée est retenue pour multiplier les détours.'
+            : 'Moto homologuée : priorité aux chemins et pistes accessibles aux motos, sans voies réservées aux vélos. Le calcul respecte les accès moto connus dans OpenStreetMap.'
           : state.seekIntense ? 'VTT sensations : le calcul cherche des sentiers plus engagés et accepte les détours. Vérifiez le niveau technique et l’accès.' : 'VTT : priorité aux sentiers, RAVeL et voies cyclables; les routes fréquentées sont pénalisées.';
     const wikilocQuery = encodeURIComponent(`${$('#origin-input').value} ${$('#destination-input').value} ${state.mode === 'family' ? 'vélo familial RAVeL' : state.mode === 'road' ? 'vélo de route' : state.mode === 'moto' ? 'moto' : 'VTT'}`);
     $('#wikiloc-link').href = `https://www.wikiloc.com/search?query=${wikilocQuery}`;
@@ -616,7 +625,9 @@ function setMode(mode) {
       ? 'Vélo de route : itinéraire le plus rapide possible sur routes adaptées et pistes cyclables, avec préférence pour les surfaces roulantes.'
       : state.mode === 'vtt'
         ? state.seekIntense ? 'VTT sensations : les chemins plus engagés sont favorisés, avec des détours acceptés.' : 'VTT : priorité forte aux sentiers et RAVeL; les routes de centre-ville sont pénalisées.'
-        : 'Moto homologuée : chemins et pistes accessibles aux motos privilégiés, voies réservées aux vélos écartées; grands axes évités.';
+        : state.seekIntense
+          ? 'Moto sensations : chemins accessibles aux motos favorisés au maximum; les détours les plus longs disponibles sont privilégiés.'
+          : 'Moto homologuée : chemins et pistes accessibles aux motos privilégiés, voies réservées aux vélos écartées; grands axes évités.';
   $('#route-button').disabled = false;
   $('#route-button span').textContent = state.mode === 'family' ? 'Calculer mon itinéraire familial' : state.mode === 'road' ? 'Calculer l’itinéraire rapide' : state.mode === 'moto' ? 'Calculer mon itinéraire moto' : 'Calculer mon itinéraire VTT';
 }
