@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111a16">
+  <meta name="description" content="Préparez et suivez vos itinéraires moto avec Cross Travel.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <title>Cross Travel — itinéraires moto</title>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="Cross Travel, accueil">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M5 23 12 8h5l-4 8h8l-4 8h-5l3-5h-5l-2 4H5Zm13-15h9l-2 5h-4l-2 4h-5l4-9Z"/></svg></span>
+        <span class="brand-name">CROSS<span>TRAVEL</span></span>
+      </a>
+      <div class="top-actions">
+        <span class="online-status"><i></i><span id="connection-label">En ligne</span></span>
+        <button class="icon-button" id="settings-open" aria-label="Paramètres" title="Paramètres"><svg viewBox="0 0 24 24"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z"/><path d="m19.4 13.5 1.1.9-1.1 1.9-1.4-.5a7.8 7.8 0 0 1-1.3.8l-.2 1.5h-2.2l-.4-1.4a7 7 0 0 1-1.5 0l-.7 1.2-2-.9.3-1.5a7.8 7.8 0 0 1-1.1-1.1l-1.5.3-.8-2.1 1.2-.7a7 7 0 0 1-.1-1.5l-1.3-.7.8-2 1.5.2a7.8 7.8 0 0 1 1-1.1l-.4-1.5 2-.9.8 1.2a7 7 0 0 1 1.5-.1l.7-1.3 2 .8-.2 1.5a7.8 7.8 0 0 1 1.1 1l1.5-.4.9 2-.2.8"/></svg></button>
+        <button class="avatar" id="saved-open" aria-label="Parcours enregistrés">CT</button>
+      </div>
+    </header>
+
+    <main class="main-layout">
+      <aside class="sidebar">
+        <div class="eyebrow"><span class="eyebrow-line"></span> VOTRE PROCHAINE SORTIE</div>
+        <h1>La route<br>se termine <em>ici.</em></h1>
+        <p class="intro">Tracez votre prochain parcours et gardez le cap, virage après virage.</p>
+
+        <div class="planner-card">
+          <div class="card-title-row"><div><span class="section-kicker">PLANIFICATEUR</span><h2>Créer un itinéraire</h2></div><span class="route-number">01</span></div>
+          <div class="route-inputs">
+            <label class="location-field"><span class="location-dot start-dot"></span><span class="field-copy"><span>Départ</span><input id="origin-input" autocomplete="off" placeholder="Adresse ou lieu" aria-label="Point de départ"></span><button id="use-location" class="locate-button" type="button" title="Utiliser ma position" aria-label="Utiliser ma position">◎</button></label>
+            <div class="connector-line"></div>
+            <label class="location-field"><span class="location-dot end-dot"></span><span class="field-copy"><span>Arrivée</span><input id="destination-input" autocomplete="off" placeholder="Où souhaitez-vous aller ?" aria-label="Point d’arrivée"></span></label>
+          </div>
+          <div class="preferences">
+            <div class="preferences-head"><span>Préférences</span><span class="preferences-hint">MOTO · ROUTE INDICATIVE</span></div>
+            <label class="check-row"><input type="checkbox" id="avoid-highways" checked><span class="custom-check"></span><span>Éviter les grands axes</span></label>
+            <label class="check-row"><input type="checkbox" id="avoid-tolls" checked><span class="custom-check"></span><span>Éviter les péages</span></label>
+            <label class="check-row disabled-check" title="Google ne fournit pas ici de statut légal fiable pour les sentiers."><input type="checkbox" disabled><span class="custom-check"></span><span>Chemins hors route vérifiés</span><span class="soon-tag">INDISPONIBLE</span></label>
+          </div>
+          <button class="primary-button" id="route-button"><span>Calculer mon itinéraire</span><svg viewBox="0 0 24 24"><path d="M5 12h13m-5-5 5 5-5 5"/></svg></button>
+          <p class="api-note" id="api-note"><span class="note-icon">i</span> Carte Google Maps : ajoutez votre clé API dans les paramètres pour commencer.</p>
+        </div>
+
+        <div class="route-result hidden" id="route-result">
+          <div class="result-head"><div><span class="section-kicker">ITINÉRAIRE CALCULÉ</span><h2 id="route-title">Votre parcours</h2></div><button class="text-button" id="save-route">＋ Enregistrer</button></div>
+          <div class="metrics"><div><strong id="route-distance">—</strong><span>DISTANCE</span></div><div><strong id="route-duration">—</strong><span>DURÉE ESTIMÉE</span></div><div><strong id="route-steps-count">—</strong><span>ÉTAPES</span></div></div>
+          <div class="route-alert"><span class="alert-symbol">!</span><span>Parcours routier indicatif. L’accès aux chemins et leur légalité ne sont pas vérifiés.</span></div>
+          <button class="primary-button start-button" id="start-navigation"><span>Démarrer la navigation</span><svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"/></svg></button>
+        </div>
+
+        <section class="saved-card" id="saved-card">
+          <div class="saved-heading"><div><span class="section-kicker">VOS REPÈRES</span><h2>Parcours enregistrés</h2></div><button class="arrow-button" id="saved-open-2" aria-label="Voir les parcours">↗</button></div>
+          <div id="saved-list" class="saved-list"><p class="empty-saved">Vos itinéraires favoris apparaîtront ici.</p></div>
+        </section>
+
+        <div class="safety-foot"><span class="shield-icon">◇</span><span>Respectez la signalisation et les accès locaux. Roulez uniquement sur les voies autorisées aux motos.</span></div>
+      </aside>
+
+      <section class="map-panel" aria-label="Carte et navigation">
+        <div id="map" class="map-canvas" role="application" aria-label="Carte interactive"></div>
+        <div id="map-placeholder" class="map-placeholder">
+          <div class="map-grid"></div><div class="contour contour-one"></div><div class="contour contour-two"></div><div class="map-road road-one"></div><div class="map-road road-two"></div><div class="map-road road-three"></div>
+          <div class="map-placeholder-content"><span class="map-pin">⌖</span><strong>Votre terrain de jeu commence ici</strong><span>La carte s’affichera après la configuration de Google Maps.</span><button id="map-settings" class="outline-button">Configurer la carte</button></div>
+          <span class="map-label label-one">FORÊT DE GOUGNIES</span><span class="map-label label-two">RAVeL</span><span class="map-label label-three">GÉRPINNES</span>
+        </div>
+        <div class="map-top-controls"><div class="map-badge"><span class="map-badge-dot"></span><span id="map-mode-label">CARTE DE REPÉRAGE</span></div><button class="map-control" id="center-map" title="Centrer sur ma position" aria-label="Centrer sur ma position">◎</button></div>
+        <div id="nav-panel" class="nav-panel hidden">
+          <div class="nav-top"><span class="nav-live"><i></i> NAVIGATION ACTIVE</span><button id="stop-navigation" class="nav-stop">Terminer</button></div>
+          <div class="next-turn"><span class="turn-arrow" id="turn-arrow">↑</span><div><small>PROCHAINE INSTRUCTION</small><strong id="nav-instruction">Suivez le parcours</strong><span id="nav-distance">En attente du GPS</span></div></div>
+          <div class="nav-progress"><span id="nav-progress-bar"></span></div><div class="nav-footer"><span id="nav-remaining">— restant</span><span id="nav-step-count">Étape —</span></div>
+        </div>
+        <div class="map-legend"><span><i class="legend-route"></i> Parcours calculé</span><span><i class="legend-unknown"></i> Statut d’accès non vérifié</span></div>
+        <div class="map-attribution">Fond de carte © Google Maps</div>
+      </section>
+    </main>
+
+    <footer class="footer"><span>© 2026 CROSS TRAVEL</span><span>Planifiez prudemment. Roulez responsablement.</span><button id="help-open">À propos & limites</button></footer>
+  </div>
+
+  <div class="modal-backdrop hidden" id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="modal"><button class="modal-close" data-close="settings-modal" aria-label="Fermer">×</button><span class="section-kicker">CONFIGURATION</span><h2 id="settings-title">Connecter Google Maps</h2><p>Entrez une clé API Google Maps Platform autorisée pour les API Maps JavaScript et Routes. La clé est conservée uniquement dans ce navigateur.</p><label class="modal-label" for="api-key-input">Clé API</label><input id="api-key-input" class="modal-input" type="password" placeholder="AIza…" autocomplete="off"><div class="modal-actions"><button class="secondary-button" data-close="settings-modal">Annuler</button><button class="primary-button compact" id="save-api-key">Enregistrer et charger</button></div><p class="small-print">Google Routes peut proposer un itinéraire pour deux-roues motorisé dans les régions couvertes. Cela ne garantit ni l’accès aux sentiers, ni leur état, ni leur légalité. La clé peut entraîner une facturation Google selon votre configuration.</p></div>
+  </div>
+  <div class="modal-backdrop hidden" id="saved-modal" role="dialog" aria-modal="true" aria-labelledby="saved-title"><div class="modal"><button class="modal-close" data-close="saved-modal" aria-label="Fermer">×</button><span class="section-kicker">COLLECTION</span><h2 id="saved-title">Parcours enregistrés</h2><div id="saved-modal-list" class="saved-list modal-saved-list"></div></div></div>
+  <div class="modal-backdrop hidden" id="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title"><div class="modal"><button class="modal-close" data-close="help-modal" aria-label="Fermer">×</button><span class="section-kicker">INFORMATIONS IMPORTANTES</span><h2 id="help-title">Ce que Cross Travel garantit</h2><p>Cross Travel utilise un itinéraire Google pour deux-roues motorisé lorsque le service est disponible. Ce mode de calcul vise les motos sur le réseau routier. Il ne constitue pas un moteur de recherche de pistes de motocross ou de chemins forestiers autorisés.</p><p>L’application ne dispose pas encore d’une base validée de droits de passage pour les motos. Un chemin visible sur la carte, ou autorisé aux vélos, n’est pas nécessairement ouvert aux motos. Vérifiez la signalisation, les arrêtés locaux et les autorisations avant de vous engager.</p><p>Le suivi GPS et l’écran allumé dépendent de l’appareil, du navigateur, de la batterie et de la couverture réseau. Ne manipulez pas l’écran en roulant.</p></div></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js" defer></script>
+</body>
+</html>

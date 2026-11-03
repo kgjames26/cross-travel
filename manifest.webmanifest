@@ -1,0 +1,16 @@
+{
+  "id": "./",
+  "name": "Cross Travel — itinéraires moto",
+  "short_name": "Cross Travel",
+  "description": "Préparez et suivez vos itinéraires moto.",
+  "lang": "fr-BE",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f5f5ef",
+  "theme_color": "#111a16",
+  "icons": [
+    {"src":"icons/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}
+  ]
+}
