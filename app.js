@@ -8,6 +8,8 @@ const state = {
   lastGeocodeAt: 0, routeServer: localStorage.getItem('ct_route_server') || DEFAULT_ROUTER,
   mode: localStorage.getItem('ct_mode') || 'vtt', mapPickTarget: null,
   voiceEnabled: localStorage.getItem('ct_voice_enabled') !== 'false', lastSpokenStep: -1,
+  distanceTravelledMeters: 0, movingDistanceMeters: 0, movingSeconds: 0,
+  currentSpeedKmh: 0, previousGpsSample: null, routeStartDistanceTravelled: 0,
   searchTimers: {}, searchControllers: {}, suggestions: {origin: [], destination: []},
   saved: JSON.parse(localStorage.getItem('ct_saved_routes') || '[]')
 };
@@ -25,7 +27,12 @@ function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 function formatDistance(meters) {
-  return meters >= 1000 ? `${(meters / 1000).toFixed(1).replace('.', ',')} km` : `${Math.round(meters)} m`;
+  const kilometers = Math.max(0, Number(meters) || 0) / 1000;
+  const precision = kilometers < 10 ? 2 : 1;
+  return `${kilometers.toFixed(precision).replace('.', ',')} km`;
+}
+function formatProximity(meters) {
+  return meters < 1000 ? `${Math.max(0, Math.round(meters))} m` : formatDistance(meters);
 }
 function formatDuration(seconds) {
   const minutes = Math.max(1, Math.round(seconds / 60));
@@ -192,7 +199,7 @@ function normalizeBRouter(payload) {
   let distanceMeters = 0;
   for (let i = 1; i < path.length; i++) distanceMeters += L.latLng(path[i - 1]).distanceTo(L.latLng(path[i]));
   const props = feature.properties || {};
-  if (Number(props['track-length']) > 0) distanceMeters = Number(props['track-length']) * 1000;
+  if (Number(props['track-length']) > 0) distanceMeters = Number(props['track-length']);
   const durationSeconds = Number(props['total-time']) > 0 ? Number(props['total-time']) : distanceMeters / 1000 / 10 * 3600;
   const steps = [];
   let previousIndex = 0, lastTurnAt = 0;
@@ -297,10 +304,6 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
       if (state.mode === 'moto') announceStep(0);
       else speakText('Parcours VTT recalculé. Suivez le nouveau tracé.');
     }
-    if (state.watchId !== null) {
-      if (state.mode === 'moto') announceStep(0);
-      else speakText('Parcours VTT recalculé. Suivez le nouveau tracé.');
-    }
     if (fromOverride) toast('Itinéraire recalculé depuis votre position.');
   } catch (error) {
     toast(error.message || 'Le calcul a échoué. Vérifiez le serveur et la connexion.');
@@ -384,20 +387,57 @@ function updateNavigation(position) {
   if (!state.route || !state.map) return;
   const point = {lat: position.coords.latitude, lon: position.coords.longitude};
   state.lastPosition = point;
+  const sampleTime = Number(position.timestamp) || Date.now();
+  const accuracy = Number(position.coords.accuracy) || 10;
+  let deltaMeters = 0, elapsedSeconds = 0, hasMoved = false;
+  if (state.previousGpsSample) {
+    elapsedSeconds = Math.min(10, Math.max(0, (sampleTime - state.previousGpsSample.time) / 1000));
+    deltaMeters = state.map.distance([state.previousGpsSample.point.lat, state.previousGpsSample.point.lon], [point.lat, point.lon]);
+    const movementThreshold = Math.max(2.5, Math.min(10, accuracy * 0.3));
+    hasMoved = elapsedSeconds > 0 && deltaMeters > movementThreshold && deltaMeters < Math.max(100, elapsedSeconds * 45);
+  }
+  const gpsSpeed = Number.isFinite(position.coords.speed) && position.coords.speed >= 0 ? position.coords.speed * 3.6 : null;
+  let measuredSpeed = gpsSpeed === null ? (hasMoved && elapsedSeconds ? deltaMeters / elapsedSeconds * 3.6 : 0) : gpsSpeed;
+  if (!hasMoved && (gpsSpeed === null || gpsSpeed < 2)) measuredSpeed = 0;
+  measuredSpeed = Math.min(220, Math.max(0, measuredSpeed));
+  state.currentSpeedKmh = measuredSpeed < 1.4 ? 0 : (state.currentSpeedKmh ? state.currentSpeedKmh * 0.45 + measuredSpeed * 0.55 : measuredSpeed);
+  if (hasMoved) state.distanceTravelledMeters += deltaMeters;
+  if (elapsedSeconds && state.currentSpeedKmh >= 1.5) {
+    state.movingSeconds += elapsedSeconds;
+    state.movingDistanceMeters += hasMoved ? deltaMeters : state.currentSpeedKmh / 3.6 * elapsedSeconds;
+  }
+  state.previousGpsSample = {point, time: sampleTime};
+
   const steps = state.route.legs[0]?.steps || [];
   let step = currentStep();
   if (!step) return;
   let distance = state.map.distance([point.lat, point.lon], [step.endLocation.lat, step.endLocation.lon]);
   const announcementIndex = state.mode === 'vtt' ? state.currentStep : state.currentStep + 1;
   if (distance <= 150) announceStep(announcementIndex);
-  if (distance < 35 && state.currentStep < steps.length - 1) { state.currentStep++; step = currentStep(); distance = state.map.distance([point.lat, point.lon], [step.endLocation.lat, step.endLocation.lon]); }
+  if (distance < 35 && state.currentStep < steps.length - 1) {
+    state.currentStep++; step = currentStep();
+    distance = state.map.distance([point.lat, point.lon], [step.endLocation.lat, step.endLocation.lon]);
+  }
   $('#nav-instruction').textContent = step.instructions;
-  $('#nav-distance').textContent = `${formatDistance(distance)} avant la prochaine étape`;
-  $('#nav-step-count').textContent = `Étape ${state.currentStep + 1} / ${steps.length}`;
-  const progress = Math.round(state.currentStep / Math.max(steps.length - 1, 1) * 100);
-  $('#nav-progress-bar').style.width = `${Math.max(5, progress)}%`;
-  const remaining = steps.slice(state.currentStep).reduce((sum, item) => sum + item.distanceMeters, 0);
-  $('#nav-remaining').textContent = `${formatDistance(remaining)} · ${formatDuration(state.route.durationSeconds * (1 - progress / 100))}`;
+  $('#nav-distance').textContent = formatProximity(distance) + ' avant la prochaine étape';
+  $('#nav-step-count').textContent = 'Étape ' + (state.currentStep + 1) + ' / ' + steps.length;
+  const routeMeters = Math.max(0, state.route.distanceMeters || 0);
+  const riddenThisRoute = Math.max(0, state.distanceTravelledMeters - state.routeStartDistanceTravelled);
+  const remainingMeters = Math.max(0, routeMeters - riddenThisRoute);
+  const progress = routeMeters ? Math.min(100, Math.round(riddenThisRoute / routeMeters * 100)) : 0;
+  $('#nav-progress-bar').style.width = Math.max(5, progress) + '%';
+  $('#nav-speed').textContent = String(Math.round(state.currentSpeedKmh));
+  $('#nav-travelled').textContent = formatDistance(state.distanceTravelledMeters);
+  $('#nav-remaining').textContent = formatDistance(remainingMeters);
+  $('#nav-rider').classList.toggle('is-moving', state.currentSpeedKmh >= 1.5);
+  const averageSpeed = state.movingSeconds >= 20 && state.movingDistanceMeters >= 60
+    ? state.movingDistanceMeters / state.movingSeconds * 3.6 : 0;
+  $('#nav-speed-average').textContent = averageSpeed
+    ? 'Moyenne roulée · ' + Math.round(averageSpeed) + ' km/h' : 'Analyse de votre vitesse…';
+  $('#nav-arrival').textContent = averageSpeed && remainingMeters > 0
+    ? new Date(sampleTime + remainingMeters / (averageSpeed / 3.6) * 1000).toLocaleTimeString('fr-BE', {hour: '2-digit', minute: '2-digit'})
+    : remainingMeters === 0 ? 'Arrivée' : 'Calcul en cours';
+  $('#nav-gps-status').textContent = (state.currentSpeedKmh >= 1.5 ? 'En mouvement' : 'À l’arrêt') + ' · GPS ±' + Math.round(accuracy) + ' m';
   if (state.navigationMarker) state.navigationMarker.setLatLng([point.lat, point.lon]);
   else state.navigationMarker = L.circleMarker([point.lat, point.lon], {radius: 8, color: '#fff', weight: 3, fillColor: '#86b83e', fillOpacity: 1}).addTo(state.map);
   state.map.panTo([point.lat, point.lon]);
@@ -412,12 +452,16 @@ function updateNavigation(position) {
     calculateRoute(point, state.destination).finally(() => { state.rerouting = false; });
   }
 }
-
 async function startNavigation() {
   if (!state.route) { toast('Calculez d’abord un itinéraire.'); return; }
   if (!navigator.geolocation) { toast('La géolocalisation n’est pas disponible sur cet appareil.'); return; }
   $('#nav-panel').classList.remove('hidden');
-  $('#map-mode-label').textContent = `NAVIGATION ${state.mode === 'vtt' ? 'VTT' : 'MOTO'} ACTIVE`;
+  document.body.classList.add('nav-active');
+  $('#map-mode-label').textContent = 'NAVIGATION ' + (state.mode === 'vtt' ? 'VTT' : 'MOTO') + ' ACTIVE';
+  $('#nav-mode-pill').textContent = (state.mode === 'vtt' ? 'VTT' : 'MOTOCROSS / ENDURO') + ' · GPS ACTIF';
+  $('#nav-rider-image').src = state.mode === 'vtt' ? 'assets/vtt-dynamique.webp' : 'assets/motocross-calme.webp';
+  state.distanceTravelledMeters = 0; state.movingDistanceMeters = 0; state.movingSeconds = 0;
+  state.currentSpeedKmh = 0; state.previousGpsSample = null; state.routeStartDistanceTravelled = 0;
   state.lastSpokenStep = -1;
   if (state.mode === 'moto') announceStep(0);
   else speakText('Navigation VTT démarrée. Suivez le tracé.');
@@ -425,13 +469,16 @@ async function startNavigation() {
     try { state.wakeLock = await navigator.wakeLock.request('screen'); }
     catch { toast('Le maintien de l’écran n’a pas été autorisé par l’appareil.'); }
   }
-  state.watchId = navigator.geolocation.watchPosition(updateNavigation, error => toast(`GPS : ${error.message}`), {enableHighAccuracy: true, maximumAge: 2000, timeout: 15000});
+  state.watchId = navigator.geolocation.watchPosition(updateNavigation, error => {
+    $('#nav-gps-status').textContent = 'GPS indisponible';
+    toast('GPS : ' + error.message);
+  }, {enableHighAccuracy: true, maximumAge: 2000, timeout: 15000});
   toast('Navigation active. Ne manipulez pas l’écran en roulant.');
 }
-
 async function stopNavigation() {
   if (state.watchId !== null) navigator.geolocation.clearWatch(state.watchId);
   state.watchId = null;
+  document.body.classList.remove('nav-active');
   if (window.speechSynthesis) window.speechSynthesis.cancel();
   if (state.wakeLock) { try { await state.wakeLock.release(); } catch {} state.wakeLock = null; }
   $('#nav-panel').classList.add('hidden'); $('#map-mode-label').textContent = `OSM · ROUTE ${state.mode === 'vtt' ? 'VTT' : 'MOTO'}`;
