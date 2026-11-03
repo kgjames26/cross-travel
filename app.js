@@ -307,10 +307,10 @@ async function requestBRouter(origin, destination) {
   const params = new URLSearchParams({
     lonlats: `${origin.lon},${origin.lat}|${destination.lon},${destination.lat}`,
     profile: 'mtb', alternativeidx: '0', format: 'geojson',
-    'profile:path_preference': state.mode === 'family' ? '300' : state.seekIntense ? '160' : $('#favor-trails').checked ? '80' : '20',
+    'profile:path_preference': state.mode === 'family' ? '100' : state.seekIntense ? '160' : $('#favor-trails').checked ? '80' : '20',
     'profile:cycleroutes_pref': state.mode === 'family' ? '0.5' : state.mode === 'vtt' && state.seekIntense ? '0.2' : $('#favor-trails').checked ? '3.0' : '0.2',
     'profile:MTB_factor': state.mode === 'vtt' && state.seekIntense ? '2.0' : '0.0',
-    'profile:isbike_for_mainroads': state.mode === 'family' ? 'false' : 'true',
+    'profile:isbike_for_mainroads': state.mode === 'family' ? '0' : '1',
     'profile:hills': state.mode === 'family' ? '2' : '0',
     'profile:avoid_unsafe': '1'
   });
