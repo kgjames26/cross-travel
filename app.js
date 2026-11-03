@@ -238,7 +238,9 @@ function normalizeBRouter(payload) {
 async function requestBRouter(origin, destination) {
   const params = new URLSearchParams({
     lonlats: `${origin.lon},${origin.lat}|${destination.lon},${destination.lat}`,
-    profile: 'mtb', alternativeidx: '0', format: 'geojson'
+    profile: 'mtb', alternativeidx: '0', format: 'geojson',
+    'profile:path_preference': $('#favor-trails').checked ? '40' : '20',
+    'profile:avoid_unsafe': '1'
   });
   const response = await fetch(`${BROUTER_URL}?${params}`);
   const text = await response.text();
@@ -259,8 +261,10 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
     if (state.mode === 'vtt') {
       state.route = await requestBRouter(origin, destination);
     } else {
-      const trailPreference = $('#favor-trails').checked ? 0.82 : 0.05;
-      const highwayPreference = $('#avoid-highways').checked ? 0.08 : 0.5;
+      const preferPaths = $('#favor-trails').checked;
+      const trailPreference = preferPaths ? 1 : 0;
+      const trackPreference = preferPaths ? 1 : 0.5;
+      const highwayPreference = preferPaths ? 0 : 0.5;
       const tollPreference = $('#avoid-tolls').checked ? 0 : 0.5;
       const response = await fetch(state.routeServer, {
         method: 'POST',
@@ -268,7 +272,7 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
         body: JSON.stringify({
           locations: [{lat: origin.lat, lon: origin.lon, type: 'break'}, {lat: destination.lat, lon: destination.lon, type: 'break'}],
           costing: 'motorcycle',
-          costing_options: {motorcycle: {use_highways: highwayPreference, use_trails: trailPreference, use_tolls: tollPreference}},
+          costing_options: {motorcycle: {use_highways: highwayPreference, use_trails: trailPreference, use_tracks: trackPreference, use_tolls: tollPreference}},
           directions_options: {units: 'kilometers', language: 'fr-FR'},
           shape_format: 'geojson'
         })
@@ -429,8 +433,8 @@ function setMode(mode) {
   document.querySelectorAll('.moto-only').forEach(node => node.classList.toggle('hidden', state.mode !== 'moto'));
   $('#mode-hint').textContent = state.mode === 'vtt' ? 'VTT · MTB' : 'MOTO · VALHALLA';
   $('#routing-note').textContent = state.mode === 'vtt'
-    ? 'Profil MTB BRouter : privilégie les pistes et sentiers roulables selon OSM. Vérifiez les accès et le niveau technique avant le départ.'
-    : 'Profil motocross / enduro Valhalla : réduit les grands axes et favorise les pistes accessibles aux motos selon OSM.';
+    ? 'BRouter MTB augmente fortement le coût des routes et privilégie pistes/sentiers selon OSM. Vérifiez le niveau technique et l’accès.'
+    : 'Valhalla favorise au maximum pistes et chemins accessibles aux motos, et pénalise les grands axes. Les données OSM peuvent être incomplètes.';
   $('#route-button span').textContent = `Calculer mon itinéraire ${state.mode === 'vtt' ? 'VTT' : 'moto'}`;
 }
 
