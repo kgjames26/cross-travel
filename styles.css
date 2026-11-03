@@ -150,24 +150,24 @@ body.nav-active .nav-rider img[src*="velo-familial"]{width:min(40vw,220px)}
 
 /* Mode themes: the selected activity colors the full interface. */
 :root{
- --mode-accent:#d4f27e;--mode-strong:#638b2d;--mode-accent-strong:#95772d;
- --mode-wash:#edf6dc;--mode-deep:#101914;--mode-paper:#f1f3ed;
+ --mode-accent:#ff9c2f;--mode-strong:#a84b00;--mode-accent-strong:#d86a00;
+ --mode-wash:#fff1dc;--mode-deep:#321a08;--mode-deep-end:#3f2815;--mode-paper:#fff9f0;
  --green:var(--mode-accent);--green-dark:var(--mode-strong)
 }
 body[data-mode="vtt"]{
- --mode-accent:#d4f27e;--mode-strong:#638b2d;--mode-accent-strong:#95772d;
- --mode-wash:#edf6dc;--mode-deep:#101914;--mode-paper:#f1f3ed
+ --mode-accent:#ff9c2f;--mode-strong:#a84b00;--mode-accent-strong:#d86a00;
+ --mode-wash:#fff1dc;--mode-deep:#321a08;--mode-deep-end:#3f2815;--mode-paper:#fff9f0
 }
 body[data-mode="family"]{
- --mode-accent:#74ddc5;--mode-strong:#087d6b;--mode-accent-strong:#138f7a;
- --mode-wash:#def5ee;--mode-deep:#0c2925;--mode-paper:#eef9f5
+ --mode-accent:#b6f51a;--mode-strong:#477600;--mode-accent-strong:#6b9500;
+ --mode-wash:#f1ffd4;--mode-deep:#1f3006;--mode-deep-end:#31470a;--mode-paper:#f8fbef
 }
 body[data-mode="moto"]{
- --mode-accent:#ff9d62;--mode-strong:#b34f20;--mode-accent-strong:#cf6127;
- --mode-wash:#fff0e5;--mode-deep:#2c1b13;--mode-paper:#faf1eb
+ --mode-accent:#ff5d66;--mode-strong:#a81725;--mode-accent-strong:#d8343e;
+ --mode-wash:#ffe5e7;--mode-deep:#330c11;--mode-deep-end:#48161d;--mode-paper:#fff4f4
 }
 body{background:radial-gradient(ellipse at 8% 8%,var(--mode-wash) 0,transparent 42%),var(--mode-paper);transition:background-color .3s ease}
-.topbar{background:linear-gradient(110deg,var(--mode-deep),#1c2a22);transition:background .3s ease}
+.topbar{background:linear-gradient(110deg,var(--mode-deep),var(--mode-deep-end));transition:background .3s ease}
 .brand-mark{background:var(--mode-accent);transition:background .25s ease}
 h1 em{color:var(--mode-strong);transition:color .25s ease}
 .eyebrow{color:var(--mode-strong);background:var(--mode-wash);border-radius:999px;padding:7px 10px;width:max-content}
