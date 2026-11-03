@@ -555,10 +555,10 @@ function updateNavigation(position) {
   const arrowHeading = state.navigationHeading ?? state.lastMapBearing;
   // Flèche directionnelle évidée, inspirée de l’icône GPS fournie.
   const arrowPoints = [
-    offsetPointMeters(point, 17.3, arrowHeading),
-    offsetPointMeters(point, 10, arrowHeading + 145),
-    offsetPointMeters(point, 3.3, arrowHeading + 180),
-    offsetPointMeters(point, 10, arrowHeading + 215)
+    offsetPointMeters(point, 11.5, arrowHeading),
+    offsetPointMeters(point, 6.7, arrowHeading + 145),
+    offsetPointMeters(point, 2.2, arrowHeading + 180),
+    offsetPointMeters(point, 6.7, arrowHeading + 215)
   ];
   const arrowStyle = {
     color: '#fff', weight: 3,
@@ -620,7 +620,17 @@ async function stopNavigation() {
 }
 
 function savedItem(route, index) {
-  return `<div class="saved-item"><span class="saved-route-icon">⌁</span><div class="saved-route-copy"><strong title="${escapeHtml(route.title)}">${escapeHtml(route.title)}</strong><span>${formatDistance(route.distance || 0)} · ${new Date(route.savedAt).toLocaleDateString('fr-BE')}</span></div><button class="delete-saved" data-delete="${index}" aria-label="Supprimer ${escapeHtml(route.title)}">×</button></div>`;
+  return `<div class="saved-item" data-route-index="${index}" role="button" tabindex="0" aria-label="Charger le trajet ${escapeHtml(route.title)}"><span class="saved-route-icon" aria-hidden="true">⌁</span><div class="saved-route-copy"><strong title="${escapeHtml(route.title)}">${escapeHtml(route.title)}</strong><span>${formatDistance(route.distance || 0)} · ${new Date(route.savedAt).toLocaleDateString('fr-BE')}</span></div><button class="delete-saved" data-delete="${index}" aria-label="Supprimer ${escapeHtml(route.title)}">×</button></div>`;
+}
+
+function loadSavedRoute(index) {
+  const route = state.saved[index]; if (!route?.origin || !route?.destination) return;
+  if (route.mode) setMode(route.mode);
+  if (route.mode === 'family' && typeof route.familyFast === 'boolean') {
+    state.familyFast = route.familyFast; localStorage.setItem('ct_family_fast', String(state.familyFast)); setMode('family');
+  }
+  $('#origin-input').value = route.originLabel || 'Point enregistré'; $('#destination-input').value = route.destinationLabel || 'Point enregistré';
+  state.origin = route.origin; state.destination = route.destination; closeModal('saved-modal'); calculateRoute();
 }
 
 function renderSaved() {
@@ -630,16 +640,19 @@ function renderSaved() {
   document.querySelectorAll('[data-delete]').forEach(button => button.addEventListener('click', event => {
     event.stopPropagation(); state.saved.splice(Number(button.dataset.delete), 1); saveSaved(); toast('Parcours supprimé.');
   }));
-  document.querySelectorAll('.saved-item').forEach((item, index) => item.addEventListener('click', event => {
-    if (event.target.closest('[data-delete]')) return;
-    const route = state.saved[index]; if (!route?.origin || !route?.destination) return;
-    if (route.mode) setMode(route.mode);
-    if (route.mode === 'family' && typeof route.familyFast === 'boolean') {
-      state.familyFast = route.familyFast; localStorage.setItem('ct_family_fast', String(state.familyFast)); setMode('family');
-    }
-    $('#origin-input').value = route.originLabel || 'Point enregistré'; $('#destination-input').value = route.destinationLabel || 'Point enregistré';
-    state.origin = route.origin; state.destination = route.destination; closeModal('saved-modal'); calculateRoute();
-  }));
+  document.querySelectorAll('.saved-item').forEach(item => {
+    item.addEventListener('click', event => {
+      if (event.target.closest('[data-delete]')) return;
+      loadSavedRoute(Number(item.dataset.routeIndex));
+    });
+    item.addEventListener('keydown', event => {
+      if (event.target.closest('[data-delete]')) return;
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        loadSavedRoute(Number(item.dataset.routeIndex));
+      }
+    });
+  });
 }
 function saveSaved() { localStorage.setItem('ct_saved_routes', JSON.stringify(state.saved)); renderSaved(); }
 
