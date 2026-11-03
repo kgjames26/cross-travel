@@ -261,3 +261,10 @@ h1 em{color:var(--mode-strong);transition:color .25s ease}
  .brand-cliparts .brand-family{width:36px}
  .topbar{padding-inline:9px}
 }
+
+.hero-title{order:1;margin:15px 0 10px}
+.hero-title h1{font-size:clamp(36px,3.6vw,54px);line-height:.98;letter-spacing:-.065em;margin:0}
+@media(max-width:680px){
+ .hero-title{order:1;margin:0}
+ .hero-title h1{font-size:39px}
+}
