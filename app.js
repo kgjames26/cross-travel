@@ -46,7 +46,8 @@ function setPoint(which, point, label) {
   closeSuggestions(which);
   if (state.map) {
     state.markers = state.markers.filter(marker => { state.map.removeLayer(marker); return false; });
-    for (const [key, color] of [['origin', '#80a943'], ['destination', '#252e29']]) {
+    const modeColor = getComputedStyle(document.body).getPropertyValue('--mode-strong').trim() || '#80a943';
+    for (const [key, color] of [['origin', modeColor], ['destination', '#252e29']]) {
       const selected = state[key];
       if (selected) state.markers.push(L.circleMarker([selected.lat, selected.lon], {radius: 7, color: '#fff', weight: 3, fillColor: color, fillOpacity: 1}).addTo(state.map));
     }
@@ -380,13 +381,15 @@ function drawRoute() {
   state.markers.forEach(marker => state.map.removeLayer(marker));
   state.stepLayers = []; state.markers = [];
   const path = state.route.path;
-  state.routeLayer = L.polyline(path, {color: '#24382b', weight: 5, opacity: .94}).addTo(state.map);
+  const themeRoute = getComputedStyle(document.body).getPropertyValue('--mode-strong').trim() || '#24382b';
+  const themeStep = getComputedStyle(document.body).getPropertyValue('--mode-accent-strong').trim() || '#d08b42';
+  state.routeLayer = L.polyline(path, {color: themeRoute, weight: 5, opacity: .94}).addTo(state.map);
   state.map.fitBounds(state.routeLayer.getBounds(), {padding: [55, 55]});
   for (const point of [state.origin, state.destination]) {
     if (point) state.markers.push(L.circleMarker([point.lat, point.lon], {radius: 7, color: '#fff', weight: 3, fillColor: '#80a943', fillOpacity: 1}).addTo(state.map));
   }
   (state.route.legs[0]?.steps || []).forEach(step => {
-    if (step.path.length > 1) state.stepLayers.push(L.polyline(step.path, {color: '#d08b42', weight: 3, opacity: .42, dashArray: '5 7'}).addTo(state.map));
+    if (step.path.length > 1) state.stepLayers.push(L.polyline(step.path, {color: themeStep, weight: 3, opacity: .5, dashArray: '5 7'}).addTo(state.map));
   });
 }
 
@@ -593,6 +596,7 @@ function centerMap() {
 
 function setMode(mode) {
   state.mode = mode === 'moto' ? 'moto' : mode === 'family' ? 'family' : 'vtt';
+  document.body.dataset.mode = state.mode;
   localStorage.setItem('ct_mode', state.mode);
   document.querySelectorAll('.mode-button').forEach(button => {
     const active = button.dataset.mode === state.mode;
