@@ -305,8 +305,8 @@ async function requestBRouter(origin, destination) {
   const params = new URLSearchParams({
     lonlats: `${origin.lon},${origin.lat}|${destination.lon},${destination.lat}`,
     profile: 'mtb', alternativeidx: '0', format: 'geojson',
-    'profile:path_preference': $('#favor-trails').checked ? '80' : '20',
-    'profile:cycleroutes_pref': $('#favor-trails').checked ? '3.0' : '0.2',
+    'profile:path_preference': state.mode === 'family' ? '100' : $('#favor-trails').checked ? '80' : '20',
+    'profile:cycleroutes_pref': state.mode === 'family' ? '5.0' : $('#favor-trails').checked ? '3.0' : '0.2',
     'profile:avoid_unsafe': '1'
   });
   const response = await fetch(`${BROUTER_URL}?${params}`);
@@ -318,127 +318,6 @@ async function requestBRouter(origin, destination) {
 }
 
 
-async function requestRavelRoute(origin, destination) {
-  const latPad = Math.max(0.035, Math.abs(destination.lat - origin.lat) * 0.08);
-  const lonPad = Math.max(0.05, Math.abs(destination.lon - origin.lon) * 0.08);
-  const south = Math.min(origin.lat, destination.lat) - latPad;
-  const north = Math.max(origin.lat, destination.lat) + latPad;
-  const west = Math.min(origin.lon, destination.lon) - lonPad;
-  const east = Math.max(origin.lon, destination.lon) + lonPad;
-  const bbox = `(${south},${west},${north},${east})`;
-  const query = `[out:json][timeout:25];(way["highway"="cycleway"]${bbox};way["highway"~"^(path|track|footway|bridleway|pedestrian)$"]["bicycle"~"^(yes|designated|permissive)$"]${bbox};relation["route"="bicycle"]["name"~"RAVeL",i]${bbox};relation["route"="bicycle"]["ref"~"RAVeL",i]${bbox};);(._;>;);out body;`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
-  let response;
-  try {
-    response = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'},
-      body: 'data=' + encodeURIComponent(query), signal: controller.signal
-    });
-  } catch (error) {
-    if (error.name === 'AbortError') throw new Error('La recherche des chemins cyclables a expiré. Réessayez avec une zone plus proche.');
-    throw new Error('Les chemins cyclables OpenStreetMap sont momentanément inaccessibles.');
-  } finally { clearTimeout(timeout); }
-  if (!response.ok) throw new Error(`Recherche de chemins cyclables indisponible (${response.status}).`);
-  const payload = await response.json();
-  const elements = payload.elements || [];
-  const relations = elements.filter(item => item.type === 'relation' && item.tags?.route === 'bicycle' && /ravel/i.test((item.tags?.name || '') + ' ' + (item.tags?.ref || '')));
-  const relationWays = new Set(relations.flatMap(item => (item.members || []).filter(member => member.type === 'way').map(member => member.ref)));
-  const nodes = new Map(elements.filter(item => item.type === 'node').map(item => [item.id, [item.lat, item.lon]]));
-  const allowedSurfaces = new Set(['asphalt','paved','concrete','concrete:lanes','concrete:plates','paving_stones','compacted','fine_gravel','gravel','pebblestone']);
-  const ways = elements.filter(item => {
-    if (item.type !== 'way' || !Array.isArray(item.nodes)) return false;
-    const tags = item.tags || {};
-    const highway = tags.highway || '';
-    const surface = (tags.surface || '').toLowerCase();
-    const bicycleAccess = ['yes','designated','permissive'].includes(tags.bicycle);
-    const cycleway = highway === 'cycleway';
-    const bikeDesignatedPath = ['path','track','footway','bridleway','pedestrian'].includes(highway) && bicycleAccess;
-    const namedRavel = /ravel/i.test((tags.name || '') + ' ' + (tags.ref || ''));
-    const onRavelRelation = relationWays.has(item.id);
-    return (cycleway || bikeDesignatedPath || namedRavel || onRavelRelation) &&
-      ['cycleway','path','track','footway','bridleway','pedestrian'].includes(highway) &&
-      allowedSurfaces.has(surface) &&
-      !['no','private'].includes(tags.access) && !['no','private'].includes(tags.bicycle);
-  });
-  if (!ways.length) throw new Error('Aucun chemin cyclable avec une surface cartographiée jusqu’au gravel dans cette zone. Les routes ordinaires et surfaces plus rugueuses sont exclues.');
-  const graph = new Map();
-  const addEdge = (from, to, meters, costFactor) => {
-    if (!graph.has(from)) graph.set(from, []);
-    graph.get(from).push({id: to, meters, cost: meters * costFactor});
-  };
-  for (const way of ways) {
-    const tags = way.tags || {};
-    const forwardOnly = tags.oneway === 'yes' && tags.bicycle !== 'no';
-    const reverseOnly = tags.oneway === '-1';
-    for (let i = 1; i < way.nodes.length; i++) {
-      const a = way.nodes[i - 1], b = way.nodes[i];
-      const pa = nodes.get(a), pb = nodes.get(b);
-      if (!pa || !pb) continue;
-      const meters = L.latLng(pa).distanceTo(L.latLng(pb));
-      if (meters > 2000) continue;
-      const surface = (tags.surface || '').toLowerCase();
-      const surfaceFactor = ['gravel','fine_gravel','pebblestone'].includes(surface) ? 1.22 : surface === 'compacted' ? 1.08 : 1;
-      const pathFactor = tags.highway === 'cycleway' ? 0.92 : 1;
-      const ravelFactor = /ravel/i.test((tags.name || '') + ' ' + (tags.ref || '')) || relationWays.has(way.id) ? 0.94 : 1;
-      const factor = surfaceFactor * pathFactor * ravelFactor;
-      if (!reverseOnly) addEdge(a, b, meters, factor);
-      if (!forwardOnly) addEdge(b, a, meters, factor);
-    }
-  }
-  const nearestNode = point => {
-    let best = null, bestMeters = Infinity;
-    for (const id of graph.keys()) {
-      const coords = nodes.get(id);
-      if (!coords) continue;
-      const meters = L.latLng(point.lat, point.lon).distanceTo(L.latLng(coords));
-      if (meters < bestMeters) { best = id; bestMeters = meters; }
-    }
-    return {id: best, meters: bestMeters};
-  };
-  const start = nearestNode(origin), goal = nearestNode(destination);
-  if (!start.id || !goal.id || start.meters > 150 || goal.meters > 150) {
-    throw new Error('Départ ou arrivée trop éloigné d’un chemin cyclable adapté (maximum 150 m). Choisissez un point proche du réseau cyclable.');
-  }
-  const distances = new Map([[start.id, 0]]), previous = new Map(), heap = [{id: start.id, cost: 0}];
-  const push = item => { heap.push(item); let i = heap.length - 1; while (i) { const p = (i - 1) >> 1; if (heap[p].cost <= item.cost) break; heap[i] = heap[p]; i = p; } heap[i] = item; };
-  const pop = () => {
-    const first = heap[0], last = heap.pop();
-    if (heap.length) { let i = 0; while (true) { let c = i * 2 + 1; if (c >= heap.length) break; if (c + 1 < heap.length && heap[c + 1].cost < heap[c].cost) c++; if (heap[c].cost >= last.cost) break; heap[i] = heap[c]; i = c; } heap[i] = last; }
-    return first;
-  };
-  while (heap.length) {
-    const current = pop();
-    if (current.cost !== distances.get(current.id)) continue;
-    if (current.id === goal.id) break;
-    for (const edge of graph.get(current.id) || []) {
-      const next = current.cost + edge.cost;
-      if (next < (distances.get(edge.id) ?? Infinity)) {
-        distances.set(edge.id, next); previous.set(edge.id, current.id); push({id: edge.id, cost: next});
-      }
-    }
-  }
-  if (!distances.has(goal.id)) throw new Error('Aucun parcours cyclable continu ne relie ces points. Aucune route ordinaire ne sera ajoutée.');
-  const ids = [goal.id];
-  while (ids[0] !== start.id) { const parent = previous.get(ids[0]); if (parent === undefined) throw new Error('Le tracé RAVeL est discontinu dans OpenStreetMap.'); ids.unshift(parent); }
-  const path = ids.map(id => nodes.get(id)).filter(Boolean);
-  if (path.length < 2) throw new Error('Choisissez deux points distincts sur le réseau RAVeL.');
-  let distanceMeters = 0, cumulative = [0];
-  for (let i = 1; i < path.length; i++) { distanceMeters += L.latLng(path[i-1]).distanceTo(L.latLng(path[i])); cumulative[i] = distanceMeters; }
-  const bearing = (a,b) => { const rad=v=>v*Math.PI/180, y=Math.sin(rad(b[1]-a[1]))*Math.cos(rad(b[0])), x=Math.cos(rad(a[0]))*Math.sin(rad(b[0]))-Math.sin(rad(a[0]))*Math.cos(rad(b[0]))*Math.cos(rad(b[1]-a[1])); return (Math.atan2(y,x)*180/Math.PI+360)%360; };
-  const steps=[]; let previousIndex=0, lastTurn=0;
-  for(let i=3;i<path.length-3;i++){
-    if(cumulative[i]-lastTurn<180) continue;
-    const delta=((bearing(path[i-3],path[i+3])-bearing(path[i-3],path[i])+540)%360)-180;
-    if(Math.abs(delta)<55) continue;
-    steps.push({instructions:delta>0?'Suivez le chemin cyclable en tournant à droite':'Suivez le chemin cyclable en tournant à gauche',distanceMeters:cumulative[i]-cumulative[previousIndex],endLocation:{lat:path[i][0],lon:path[i][1]},path:path.slice(previousIndex,i+1)});
-    previousIndex=i; lastTurn=cumulative[i];
-  }
-  const end=path.at(-1);
-  steps.push({instructions:'Continuez sur le chemin cyclable jusqu’à l’arrivée',distanceMeters:distanceMeters-cumulative[previousIndex],endLocation:{lat:end[0],lon:end[1]},path:path.slice(previousIndex)});
-  return {path,distanceMeters,durationSeconds:distanceMeters/1000/14*3600,legs:[{steps}]};
-}
-
 async function calculateRoute(fromOverride = null, toOverride = null) {
   const button = $('#route-button'); button.disabled = true;
   button.querySelector('span').textContent = 'Calcul en cours…';
@@ -447,9 +326,7 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
     const origin = fromOverride || await resolvePoint($('#origin-input'), state.origin);
     const destination = toOverride || await resolvePoint($('#destination-input'), state.destination);
     state.origin = origin; state.destination = destination;
-    if (state.mode === 'family') {
-      state.route = await requestRavelRoute(origin, destination);
-    } else if (state.mode === 'vtt') {
+    if (state.mode === 'family' || state.mode === 'vtt') {
       state.route = await requestBRouter(origin, destination);
     } else {
       const preferPaths = $('#favor-trails').checked;
@@ -472,21 +349,17 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
       if (!response.ok) throw new Error(payload.error || payload.status_message || `Erreur du moteur Valhalla (${response.status}).`);
       state.route = normalizeValhalla(payload);
     }
-    if (state.mode === 'family') {
-      const first = state.route.path[0], last = state.route.path.at(-1);
-      state.origin = {lat:first[0],lon:first[1]}; state.destination = {lat:last[0],lon:last[1]};
-    }
     state.currentStep = 0;
     state.lastSpokenStep = -1;
     state.routeStartDistanceTravelled = state.distanceTravelledMeters;
     drawRoute(); showRoute();
-    $('#map-mode-label').textContent = state.mode === 'family' ? 'OSM · VOIES CYCLABLES' : state.mode === 'vtt' ? 'OSM · BROUTER · PROFIL VTT' : 'OSM · VALHALLA · PROFIL MOTO';
+    $('#map-mode-label').textContent = state.mode === 'family' ? 'OSM · CHEMINS FACILES' : state.mode === 'vtt' ? 'OSM · BROUTER · PROFIL VTT' : 'OSM · VALHALLA · PROFIL MOTO';
     $('#route-alert-text').textContent = state.mode === 'family'
-      ? 'Vélo familial : uniquement des voies cyclables et chemins vélo dont la surface est cartographiée jusqu’au gravel. Routes et revêtements plus rugueux exclus.'
+      ? 'Vélo familial : chemins faciles et itinéraires cyclables privilégiés; routes évitées au maximum. Le tracé dépend des données cartographiques et des accès sur place.'
       : state.mode === 'vtt'
         ? 'VTT : priorité renforcée aux sentiers, RAVeL et voies cyclables; les routes urbaines et axes fréquentés sont fortement pénalisés quand une alternative existe.'
         : 'Motocross : chemins accessibles aux motos favorisés, rues urbaines et grands axes évités autant que possible; vérifiez toujours signalisation et autorisations.';
-    const wikilocQuery = encodeURIComponent(`${$('#origin-input').value} ${$('#destination-input').value} ${state.mode === 'family' ? 'vélo familial chemins cyclables gravel' : state.mode === 'vtt' ? 'VTT' : 'enduro motocross'}`);
+    const wikilocQuery = encodeURIComponent(`${$('#origin-input').value} ${$('#destination-input').value} ${state.mode === 'family' ? 'vélo familial chemins faciles' : state.mode === 'vtt' ? 'VTT' : 'motocross'}`);
     $('#wikiloc-link').href = `https://www.wikiloc.com/search?query=${wikilocQuery}`;
     if (state.watchId !== null) {
       if (state.mode === 'moto') announceStep(0);
@@ -647,8 +520,8 @@ async function startNavigation() {
   if (!navigator.geolocation) { toast('La géolocalisation n’est pas disponible sur cet appareil.'); return; }
   $('#nav-panel').classList.remove('hidden');
   document.body.classList.add('nav-active');
-  $('#map-mode-label').textContent = 'NAVIGATION ' + (state.mode === 'family' ? 'RAVeL FAMILIAL' : state.mode === 'vtt' ? 'VTT' : 'MOTOCROSS') + ' ACTIVE';
-  $('#nav-mode-pill').textContent = (state.mode === 'family' ? 'VÉLO FAMILIAL · GRAVEL MAX' : state.mode === 'vtt' ? 'VTT' : 'MOTOCROSS / ENDURO') + ' · GPS ACTIF';
+  $('#map-mode-label').textContent = 'NAVIGATION ' + (state.mode === 'family' ? 'VÉLO FAMILIAL' : state.mode === 'vtt' ? 'VTT' : 'MOTOCROSS') + ' ACTIVE';
+  $('#nav-mode-pill').textContent = (state.mode === 'family' ? 'VÉLO FAMILIAL · GRAVEL MAX' : state.mode === 'vtt' ? 'VTT' : 'MOTOCROSS') + ' · GPS ACTIF';
   $('#nav-rider-image').src = state.mode === 'family' ? 'assets/velo-familial.webp' : state.mode === 'vtt' ? 'assets/vtt-dynamique.webp' : 'assets/motocross-calme.webp';
   state.distanceTravelledMeters = 0; state.movingDistanceMeters = 0; state.movingSeconds = 0;
   state.currentSpeedKmh = 0; state.previousGpsSample = null; state.routeStartDistanceTravelled = 0;
@@ -671,7 +544,7 @@ async function stopNavigation() {
   document.body.classList.remove('nav-active');
   if (window.speechSynthesis) window.speechSynthesis.cancel();
   if (state.wakeLock) { try { await state.wakeLock.release(); } catch {} state.wakeLock = null; }
-  $('#nav-panel').classList.add('hidden'); $('#map-mode-label').textContent = state.mode === 'family' ? 'OSM · VOIES CYCLABLES' : `OSM · ROUTE ${state.mode === 'vtt' ? 'VTT' : 'MOTO'}`;
+  $('#nav-panel').classList.add('hidden'); $('#map-mode-label').textContent = state.mode === 'family' ? 'OSM · CHEMINS FACILES' : `OSM · ROUTE ${state.mode === 'vtt' ? 'VTT' : 'MOTO'}`;
   toast('Navigation terminée.');
 }
 
@@ -727,9 +600,9 @@ function setMode(mode) {
   });
   document.querySelectorAll('.moto-only').forEach(node => node.classList.toggle('hidden', state.mode !== 'moto'));
   $('#favor-trails-row').classList.toggle('hidden', state.mode === 'family');
-  $('#mode-hint').textContent = state.mode === 'family' ? 'CHEMINS VÉLO' : state.mode === 'vtt' ? 'VTT · MTB' : 'MOTO · VALHALLA';
+  $('#mode-hint').textContent = state.mode === 'family' ? 'CHEMINS FACILES' : state.mode === 'vtt' ? 'VTT · CHEMINS' : 'MOTO · VALHALLA';
   $('#routing-note').textContent = state.mode === 'family'
-    ? 'Vélo familial : voies cyclables et chemins accessibles aux vélos uniquement; surfaces cartographiées jusqu’au gravel. Routes ordinaires et surfaces plus rugueuses exclues. Départ et arrivée à 150 m maximum d’un chemin adapté.'
+    ? 'Vélo familial : BRouter privilégie les voies cyclables et chemins faciles, avec une forte pénalité pour les routes.'
     : state.mode === 'vtt'
       ? 'VTT : priorité forte aux sentiers et RAVeL; les routes de centre-ville sont pénalisées pour chercher un détour praticable.'
       : 'Motocross : priorité maximale aux pistes et chemins ouverts aux motos; grands axes et rues urbaines sont pénalisés, quitte à rallonger le trajet.';
