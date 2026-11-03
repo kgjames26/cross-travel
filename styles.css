@@ -502,3 +502,27 @@ body{
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}
 }
+
+/* Agrandissement de l’identité dans l’en-tête */
+.brand-name{font-size:clamp(27px,2.8vw,36px);letter-spacing:.07em}
+.brand-cliparts img{width:74px;height:76px;margin-left:-18px}
+.brand-cliparts .brand-family{width:76px}
+.brand-cliparts .brand-road{width:70px}
+@media(max-width:900px){
+  .brand-name{font-size:25px}
+  .brand-cliparts img{width:61px;height:64px;margin-left:-16px}
+  .brand-cliparts .brand-family{width:63px}
+  .brand-cliparts .brand-road{width:58px}
+}
+@media(max-width:680px){
+  .brand-name{font-size:15px;letter-spacing:.06em}
+  .brand-cliparts img{width:39px;height:42px;margin-left:-11px}
+  .brand-cliparts .brand-family{width:41px}
+  .brand-cliparts .brand-road{width:37px}
+}
+@media(max-width:360px){
+  .brand-name{font-size:13px}
+  .brand-cliparts img{width:35px;height:38px;margin-left:-10px}
+  .brand-cliparts .brand-family{width:37px}
+  .brand-cliparts .brand-road{width:33px}
+}
