@@ -555,10 +555,10 @@ function updateNavigation(position) {
   const arrowHeading = state.navigationHeading ?? state.lastMapBearing;
   // Flèche directionnelle évidée, inspirée de l’icône GPS fournie.
   const arrowPoints = [
-    offsetPointMeters(point, 26, arrowHeading),
-    offsetPointMeters(point, 15, arrowHeading + 145),
-    offsetPointMeters(point, 5, arrowHeading + 180),
-    offsetPointMeters(point, 15, arrowHeading + 215)
+    offsetPointMeters(point, 17.3, arrowHeading),
+    offsetPointMeters(point, 10, arrowHeading + 145),
+    offsetPointMeters(point, 3.3, arrowHeading + 180),
+    offsetPointMeters(point, 10, arrowHeading + 215)
   ];
   const arrowStyle = {
     color: '#fff', weight: 3,
