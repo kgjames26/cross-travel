@@ -7,6 +7,7 @@ const state = {
   lastPosition: null, navigationMarker: null, rerouting: false, lastRerouteAt: 0,
   lastGeocodeAt: 0, routeServer: localStorage.getItem('ct_route_server') || DEFAULT_ROUTER,
   mode: localStorage.getItem('ct_mode') || 'vtt', mapPickTarget: null,
+  seekIntense: localStorage.getItem('ct_seek_intense') === 'true',
   voiceEnabled: localStorage.getItem('ct_voice_enabled') !== 'false', lastSpokenStep: -1,
   distanceTravelledMeters: 0, movingDistanceMeters: 0, movingSeconds: 0,
   currentSpeedKmh: 0, previousGpsSample: null, routeStartDistanceTravelled: 0, lastHeading: null, lastMapBearing: 0,
@@ -306,8 +307,10 @@ async function requestBRouter(origin, destination) {
   const params = new URLSearchParams({
     lonlats: `${origin.lon},${origin.lat}|${destination.lon},${destination.lat}`,
     profile: 'mtb', alternativeidx: '0', format: 'geojson',
-    'profile:path_preference': state.mode === 'family' ? '300' : $('#favor-trails').checked ? '80' : '20',
-    'profile:cycleroutes_pref': state.mode === 'family' ? '50.0' : $('#favor-trails').checked ? '3.0' : '0.2',
+    'profile:path_preference': state.mode === 'family' ? '300' : state.seekIntense ? '160' : $('#favor-trails').checked ? '80' : '20',
+    'profile:cycleroutes_pref': state.mode === 'family' ? '0.5' : state.mode === 'vtt' && state.seekIntense ? '0.2' : $('#favor-trails').checked ? '3.0' : '0.2',
+    'profile:MTB_factor': state.mode === 'vtt' && state.seekIntense ? '2.0' : '0.0',
+    'profile:isbike_for_mainroads': state.mode === 'family' ? 'false' : 'true',
     'profile:hills': state.mode === 'family' ? '2' : '0',
     'profile:avoid_unsafe': '1'
   });
@@ -332,9 +335,9 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
       state.route = await requestBRouter(origin, destination);
     } else {
       const preferPaths = $('#favor-trails').checked;
-      const trailPreference = preferPaths ? 1 : 0;
-      const trackPreference = preferPaths ? 1 : 0.5;
-      const highwayPreference = preferPaths ? 0 : 0.5;
+      const trailPreference = state.seekIntense || preferPaths ? 1 : 0;
+      const trackPreference = state.seekIntense ? 1 : preferPaths ? 1 : 0.5;
+      const highwayPreference = state.seekIntense ? 0 : preferPaths ? 0 : 0.5;
       const tollPreference = $('#avoid-tolls').checked ? 0 : 0.5;
       const response = await fetch(state.routeServer, {
         method: 'POST',
@@ -342,7 +345,7 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
         body: JSON.stringify({
           locations: [{lat: origin.lat, lon: origin.lon, type: 'break'}, {lat: destination.lat, lon: destination.lon, type: 'break'}],
           costing: 'motorcycle',
-          costing_options: {motorcycle: {use_highways: highwayPreference, use_trails: trailPreference, use_tracks: trackPreference, use_living_streets: preferPaths ? 0 : 0.5, use_tolls: tollPreference}},
+          costing_options: {motorcycle: {use_highways: highwayPreference, use_trails: trailPreference, use_tracks: trackPreference, use_living_streets: state.seekIntense || preferPaths ? 0 : 0.5, use_tolls: tollPreference}},
           directions_options: {units: 'kilometers', language: 'fr-FR'},
           shape_format: 'geojson'
         })
@@ -357,10 +360,10 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
     drawRoute(); showRoute();
     $('#map-mode-label').textContent = state.mode === 'family' ? 'OSM · CHEMINS FACILES' : state.mode === 'vtt' ? 'OSM · BROUTER · PROFIL VTT' : 'OSM · VALHALLA · PROFIL MOTO';
     $('#route-alert-text').textContent = state.mode === 'family'
-      ? 'Vélo familial : priorité maximale aux RAVeL et pistes cyclables faciles; routes limitées aux raccordements quand aucune alternative n’existe. Le tracé dépend des données cartographiques.'
+      ? 'Vélo familial : RAVeL balisés prioritaires; voies cyclables en bord de route fortement pénalisées. Les routes ne servent qu’aux raccordements nécessaires.'
       : state.mode === 'vtt'
-        ? 'VTT : priorité renforcée aux sentiers, RAVeL et voies cyclables; les routes urbaines et axes fréquentés sont fortement pénalisés quand une alternative existe.'
-        : 'Motocross : chemins accessibles aux motos favorisés, rues urbaines et grands axes évités autant que possible; vérifiez toujours signalisation et autorisations.';
+        ? state.seekIntense ? 'VTT sensations : le calcul cherche des sentiers plus engagés et accepte les détours. Vérifiez le niveau technique et l’accès.' : 'VTT : priorité aux sentiers, RAVeL et voies cyclables; les routes fréquentées sont pénalisées.'
+        : state.seekIntense ? 'Motocross sensations : pistes et chemins ouverts aux motos favorisés, avec des détours possibles. Vérifiez toujours signalisation et autorisations.' : 'Motocross : chemins accessibles aux motos favorisés; vérifiez toujours signalisation et autorisations.';
     const wikilocQuery = encodeURIComponent(`${$('#origin-input').value} ${$('#destination-input').value} ${state.mode === 'family' ? 'vélo familial chemins faciles' : state.mode === 'vtt' ? 'VTT' : 'motocross'}`);
     $('#wikiloc-link').href = `https://www.wikiloc.com/search?query=${wikilocQuery}`;
     if (state.watchId !== null) {
@@ -605,12 +608,14 @@ function setMode(mode) {
   });
   document.querySelectorAll('.moto-only').forEach(node => node.classList.toggle('hidden', state.mode !== 'moto'));
   $('#favor-trails-row').classList.toggle('hidden', state.mode === 'family');
-  $('#mode-hint').textContent = state.mode === 'family' ? 'CHEMINS FACILES' : state.mode === 'vtt' ? 'VTT · CHEMINS' : 'MOTO · VALHALLA';
+  $('#sensation-row').classList.toggle('hidden', state.mode === 'family');
+  $('#seek-intense').checked = state.seekIntense;
+  $('#mode-hint').textContent = state.mode === 'family' ? 'RAVeL · PENTES DOUCES' : state.mode === 'vtt' ? state.seekIntense ? 'VTT · SENSATIONS' : 'VTT · CHEMINS' : state.seekIntense ? 'MOTO · SENSATIONS' : 'MOTO · VALHALLA';
   $('#routing-note').textContent = state.mode === 'family'
-    ? 'Vélo familial : RAVeL et pistes cyclables faciles presque exclusivement; routes fortement pénalisées.'
+    ? 'Vélo familial : RAVeL balisés prioritaires; voies cyclables en bord de route fortement pénalisées. Les routes ne servent qu’aux raccordements nécessaires.'
     : state.mode === 'vtt'
-      ? 'VTT : priorité forte aux sentiers et RAVeL; les routes de centre-ville sont pénalisées pour chercher un détour praticable.'
-      : 'Motocross : priorité maximale aux pistes et chemins ouverts aux motos; grands axes et rues urbaines sont pénalisés, quitte à rallonger le trajet.';
+      ? state.seekIntense ? 'VTT sensations : les chemins plus engagés sont favorisés, avec des détours acceptés.' : 'VTT : priorité forte aux sentiers et RAVeL; les routes de centre-ville sont pénalisées.'
+      : state.seekIntense ? 'Motocross sensations : pistes et chemins ouverts aux motos favorisés, avec des détours acceptés.' : 'Motocross : priorité aux pistes et chemins ouverts aux motos; respectez la signalisation et les accès.';
   $('#route-button span').textContent = state.mode === 'family' ? 'Calculer mon itinéraire familial' : `Calculer mon itinéraire ${state.mode === 'vtt' ? 'VTT' : 'moto'}`;
 }
 
@@ -658,6 +663,12 @@ $('#saved-open').addEventListener('click', () => openModal('saved-modal'));
 $('#saved-open-2').addEventListener('click', () => openModal('saved-modal'));
 $('#help-open').addEventListener('click', () => openModal('help-modal'));
 document.querySelectorAll('.mode-button').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
+$('#seek-intense').addEventListener('change', () => {
+  state.seekIntense = $('#seek-intense').checked;
+  localStorage.setItem('ct_seek_intense', String(state.seekIntense));
+  setMode(state.mode);
+  if (state.route && state.origin && state.destination) calculateRoute(state.origin, state.destination);
+});
 document.querySelectorAll('[data-pick]').forEach(button => button.addEventListener('click', () => beginMapPick(button.dataset.pick)));
 $('#cancel-map-pick').addEventListener('click', () => { state.mapPickTarget = null; $('#map-pick-hint').classList.add('hidden'); });
 $('#export-gpx').addEventListener('click', exportGpx);
