@@ -339,7 +339,7 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
         headers: {'Content-Type': 'application/json', 'X-Client-Id': 'cross-travel (github.com/kgjames26/cross-travel)'},
         body: JSON.stringify({
           locations: [{lat: origin.lat, lon: origin.lon, type: 'break'}, {lat: destination.lat, lon: destination.lon, type: 'break'}],
-          alternates: state.mode === 'moto' && state.seekIntense ? 3 : 0,
+          alternates: state.mode === 'moto' && state.seekIntense ? 5 : 0,
           costing: state.mode === 'moto' ? 'motorcycle' : 'bicycle',
           costing_options: state.mode === 'moto'
             ? {motorcycle: {use_highways: 0, use_trails: state.seekIntense ? 1 : 0.8}}
@@ -353,8 +353,30 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
       if (state.mode === 'moto' && state.seekIntense) {
         const variants = [payload.trip, ...(payload.alternates || []).map(alternative => alternative.trip || alternative)]
           .filter(trip => trip?.legs?.length);
-        variants.sort((a, b) => Number(b.summary?.length || 0) - Number(a.summary?.length || 0));
-        if (variants.length) payload.trip = variants[0];
+        const scored = variants.map(trip => {
+          let length = Number(trip.summary?.length) || 0;
+          let totalMeters = 0, roughMeters = 0, highwayMeters = 0;
+          for (const leg of trip.legs || []) {
+            for (const maneuver of leg.maneuvers || []) {
+              const segmentLength = Math.max(0, Number(maneuver.length) || 0);
+              totalMeters += segmentLength;
+              if (maneuver.rough) roughMeters += segmentLength;
+              if (maneuver.highway) highwayMeters += segmentLength;
+            }
+          }
+          if (!length) length = totalMeters;
+          return {
+            trip, length,
+            roughShare: totalMeters ? roughMeters / totalMeters : 0,
+            highwayShare: totalMeters ? highwayMeters / totalMeters : (trip.summary?.has_highway ? 1 : 0)
+          };
+        });
+        const longest = Math.max(1, ...scored.map(item => item.length));
+        scored.sort((a, b) => {
+          const score = item => item.roughShare * 3 - item.highwayShare * 5 + item.length / longest * 1.25;
+          return score(b) - score(a);
+        });
+        if (scored.length) payload.trip = scored[0].trip;
       }
       state.route = normalizeValhalla(payload);
     }
@@ -369,7 +391,7 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
         ? 'Vélo de route : trajet rapide sur routes adaptées et pistes cyclables; surfaces peu roulantes pénalisées.'
         : state.mode === 'moto'
           ? state.seekIntense
-            ? 'Moto sensations : chemins accessibles aux motos favorisés au maximum; la plus longue variante trouvée est retenue pour multiplier les détours.'
+            ? 'Moto sensations : comparaison des variantes; priorité aux chemins rugueux ou non pavés et pénalité aux grands axes. Le trafic en temps réel n’est pas disponible.'
             : 'Moto homologuée : priorité aux chemins et pistes accessibles aux motos, sans voies réservées aux vélos. Le calcul respecte les accès moto connus dans OpenStreetMap.'
           : state.seekIntense ? 'VTT sensations : le calcul cherche des sentiers plus engagés et accepte les détours. Vérifiez le niveau technique et l’accès.' : 'VTT : priorité aux sentiers, RAVeL et voies cyclables; les routes fréquentées sont pénalisées.';
     const wikilocQuery = encodeURIComponent(`${$('#origin-input').value} ${$('#destination-input').value} ${state.mode === 'family' ? 'vélo familial RAVeL' : state.mode === 'road' ? 'vélo de route' : state.mode === 'moto' ? 'moto' : 'VTT'}`);
@@ -626,7 +648,7 @@ function setMode(mode) {
       : state.mode === 'vtt'
         ? state.seekIntense ? 'VTT sensations : les chemins plus engagés sont favorisés, avec des détours acceptés.' : 'VTT : priorité forte aux sentiers et RAVeL; les routes de centre-ville sont pénalisées.'
         : state.seekIntense
-          ? 'Moto sensations : chemins accessibles aux motos favorisés au maximum; les détours les plus longs disponibles sont privilégiés.'
+          ? 'Moto sensations : priorité aux chemins rugueux ou non pavés et aux variantes qui pénalisent les grands axes; le trafic en temps réel n’est pas disponible.'
           : 'Moto homologuée : chemins et pistes accessibles aux motos privilégiés, voies réservées aux vélos écartées; grands axes évités.';
   $('#route-button').disabled = false;
   $('#route-button span').textContent = state.mode === 'family' ? 'Calculer mon itinéraire familial' : state.mode === 'road' ? 'Calculer l’itinéraire rapide' : state.mode === 'moto' ? 'Calculer mon itinéraire moto' : 'Calculer mon itinéraire VTT';
