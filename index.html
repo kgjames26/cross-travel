@@ -42,9 +42,9 @@
           <div class="preferences">
             <div class="preferences-head"><span>Pratique</span><span class="preferences-hint" id="mode-hint">VTT · OSM</span></div>
             <div class="mode-switch" role="group" aria-label="Type de pratique"><button type="button" class="mode-button active" data-mode="vtt" aria-pressed="true">VTT</button><button type="button" class="mode-button" data-mode="moto" aria-pressed="false">Motocross / enduro</button></div>
-            <label class="check-row"><input type="checkbox" id="avoid-highways" checked><span class="custom-check"></span><span>Éviter les grands axes</span></label>
+            <label class="check-row moto-only"><input type="checkbox" id="avoid-highways" checked><span class="custom-check"></span><span>Éviter les grands axes</span></label>
             <label class="check-row moto-only"><input type="checkbox" id="avoid-tolls" checked><span class="custom-check"></span><span>Éviter les péages</span></label>
-            <label class="check-row"><input type="checkbox" id="favor-trails" checked><span class="custom-check"></span><span>Favoriser pistes et chemins</span><span class="soon-tag">SELON ACCÈS OSM</span></label>
+            <label class="check-row moto-only"><input type="checkbox" id="favor-trails" checked><span class="custom-check"></span><span>Favoriser pistes et chemins</span><span class="soon-tag">SELON ACCÈS OSM</span></label>
             <p class="routing-note" id="routing-note">Profil VTT BRouter : privilégie chemins, pistes et voies vertes. Les accès affichés par OSM doivent être vérifiés.</p>
           </div>
           <button class="primary-button" id="route-button"><span>Calculer mon itinéraire</span><svg viewBox="0 0 24 24"><path d="M5 12h13m-5-5 5 5-5 5"/></svg></button>
@@ -64,7 +64,7 @@
           <div id="saved-list" class="saved-list"><p class="empty-saved">Vos itinéraires favoris apparaîtront ici.</p></div>
         </section>
 
-        <div class="safety-foot"><span class="shield-icon">◇</span><span>Respectez la signalisation et les accès locaux. Roulez uniquement sur les voies autorisées aux motos.</span></div>
+        <div class="safety-foot"><span class="shield-icon">◇</span><span>Respectez la signalisation et les accès locaux. Une voie ouverte au VTT peut être interdite aux motos.</span></div>
       </aside>
 
       <section class="map-panel" aria-label="Carte et navigation">

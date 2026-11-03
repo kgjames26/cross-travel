@@ -84,7 +84,6 @@ async function searchAddresses(query, mapCenter = true, signal) {
     const center = state.map.getCenter();
     params.set('lat', String(center.lat)); params.set('lon', String(center.lng)); params.set('zoom', String(state.map.getZoom()));
   }
-  params.set('countrycode', 'be');
   const response = await fetch(`https://photon.komoot.io/api/?${params}`, {signal, headers: {'Accept': 'application/json'}});
   if (!response.ok) throw new Error(`Recherche d’adresse indisponible (${response.status}).`);
   return (await response.json()).features || [];
@@ -194,9 +193,45 @@ function normalizeBRouter(payload) {
   const props = feature.properties || {};
   if (Number(props['track-length']) > 0) distanceMeters = Number(props['track-length']) * 1000;
   const durationSeconds = Number(props['total-time']) > 0 ? Number(props['total-time']) : distanceMeters / 1000 / 12 * 3600;
+  const steps = [];
+  let previousIndex = 0, lastTurnAt = 0;
+  const distanceAt = [0];
+  for (let i = 1; i < path.length; i++) distanceAt[i] = distanceAt[i - 1] + L.latLng(path[i - 1]).distanceTo(L.latLng(path[i]));
+  const nearestBefore = (index, meters) => {
+    let cursor = index;
+    while (cursor > 0 && distanceAt[index] - distanceAt[cursor] < meters) cursor--;
+    return cursor;
+  };
+  const nearestAfter = (index, meters) => {
+    let cursor = index;
+    while (cursor < path.length - 1 && distanceAt[cursor] - distanceAt[index] < meters) cursor++;
+    return cursor;
+  };
+  const bearing = (a, b) => {
+    const rad = value => value * Math.PI / 180;
+    const y = Math.sin(rad(b[1] - a[1])) * Math.cos(rad(b[0]));
+    const x = Math.cos(rad(a[0])) * Math.sin(rad(b[0])) - Math.sin(rad(a[0])) * Math.cos(rad(b[0])) * Math.cos(rad(b[1] - a[1]));
+    return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+  };
+  for (let i = 1; i < path.length - 1; i++) {
+    if (distanceAt[i] - lastTurnAt < 120 || distanceAt[i] - distanceAt[previousIndex] < 80) continue;
+    const before = nearestBefore(i, 25), after = nearestAfter(i, 25);
+    if (before === i || after === i) continue;
+    const delta = ((bearing(path[before], path[after]) - bearing(path[before], path[i]) + 540) % 360) - 180;
+    if (Math.abs(delta) < 55) continue;
+    const end = path[i];
+    steps.push({
+      instructions: Math.abs(delta) > 135 ? 'Prenez le virage serré' : delta > 0 ? 'Tournez à droite' : 'Tournez à gauche',
+      distanceMeters: distanceAt[i] - distanceAt[previousIndex],
+      endLocation: {lat: end[0], lon: end[1]}, path: path.slice(previousIndex, i + 1)
+    });
+    previousIndex = i; lastTurnAt = distanceAt[i];
+  }
+  const finalPoint = path.at(-1);
+  steps.push({instructions: 'Continuez jusqu’à l’arrivée', distanceMeters: distanceAt.at(-1) - distanceAt[previousIndex], endLocation: {lat: finalPoint[0], lon: finalPoint[1]}, path: path.slice(previousIndex)});
   return {
     path, distanceMeters, durationSeconds,
-    legs: [{steps: [{instructions: 'Suivez le tracé VTT vers l’arrivée', distanceMeters, endLocation: {lat: path.at(-1)[0], lon: path.at(-1)[1]}, path}]}]
+    legs: [{steps}]
   };
 }
 

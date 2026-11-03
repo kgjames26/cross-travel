@@ -20,11 +20,11 @@ La recherche d’adresse utilise l’API Photon publique de Komoot avec une limi
 
 BRouter est appelé via `https://brouter.de/brouter` avec le profil `trekking` pour le VTT. Le profil et les cartes sont basés sur OSM et ne garantissent pas qu’un passage soit praticable ou ouvert à la date de sortie.
 
-Le calcul motocross/enduro utilise Valhalla et le profil moto. Le réglage pistes ajuste les préférences du moteur; le profil doit respecter les accès motorisés connus dans les données OSM. Un chemin autorisé aux vélos, un RAVeL ou un sentier forestier n’est pas automatiquement autorisé aux motos. Cross Travel n’ajoute pas volontairement de voies interdites aux véhicules motorisés. Vérifiez les panneaux, arrêtés, autorisations privées et conditions sur place.
+Le calcul motocross/enduro utilise Valhalla et le profil moto. Les réglages pistes et grands axes ajustent les préférences du moteur; le profil doit respecter les accès motorisés connus dans les données OSM. Un chemin autorisé aux vélos, un RAVeL ou un sentier forestier n’est pas automatiquement autorisé aux motos. Cross Travel n’ajoute pas volontairement de voies interdites aux véhicules motorisés. Vérifiez les panneaux, arrêtés, autorisations privées et conditions sur place.
 
 Wikiloc ne fournit pas d’API publique d’import de traces à l’application : le lien ouvre sa recherche dans un nouvel onglet. L’export GPX sert à importer le parcours dans OsmAnd (ou une application compatible). OsmAnd n’est pas lancé automatiquement par le site.
 
-Les indications de guidage se basent sur les manœuvres envoyées par Valhalla. Le profil BRouter renvoie une géométrie de parcours; le guidage VTT de cette version affiche une instruction de suivi du tracé et la progression GPS, sans annonces détaillées de chaque virage.
+Les indications moto utilisent les manœuvres envoyées par Valhalla. Pour le VTT, Cross Travel déduit des indications de virage approximatives de la géométrie BRouter; elles ne remplacent pas l’observation du tracé sur la carte. La durée VTT est une estimation lorsque le moteur ne fournit pas de temps.
 
 ## Configuration
 
