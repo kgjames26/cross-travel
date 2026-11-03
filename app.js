@@ -385,8 +385,8 @@ async function requestRavelRoute(origin, destination) {
     return {id: best, meters: bestMeters};
   };
   const start = nearestNode(origin), goal = nearestNode(destination);
-  if (!start.id || !goal.id || start.meters > 1200 || goal.meters > 1200) {
-    throw new Error('Départ ou arrivée trop éloigné du RAVeL cartographié (maximum 1,2 km). Choisissez un point sur le réseau RAVeL.');
+  if (!start.id || !goal.id || start.meters > 150 || goal.meters > 150) {
+    throw new Error('Départ ou arrivée trop éloigné du RAVeL cartographié (maximum 150 m). Choisissez un point sur le réseau RAVeL.');
   }
   const distances = new Map([[start.id, 0]]), previous = new Map(), heap = [{id: start.id, cost: 0}];
   const push = item => { heap.push(item); let i = heap.length - 1; while (i) { const p = (i - 1) >> 1; if (heap[p].cost <= item.cost) break; heap[i] = heap[p]; i = p; } heap[i] = item; };
@@ -459,6 +459,10 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || payload.status_message || `Erreur du moteur Valhalla (${response.status}).`);
       state.route = normalizeValhalla(payload);
+    }
+    if (state.mode === 'family') {
+      const first = state.route.path[0], last = state.route.path.at(-1);
+      state.origin = {lat:first[0],lon:first[1]}; state.destination = {lat:last[0],lon:last[1]};
     }
     state.currentStep = 0;
     state.lastSpokenStep = -1;
