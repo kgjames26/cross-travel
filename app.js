@@ -237,6 +237,11 @@ const I18N_ROWS = [
  ['départ','start','出发点','प्रस्थान','salida','الانطلاق']
 ];
 const UI_TRANSLATIONS = Object.fromEntries(I18N_ROWS.map(row => [row[0], {en: row[1], zh: row[2], hi: row[3], es: row[4], ar: row[5]}]));
+Object.assign(UI_TRANSLATIONS, {
+  'Renommer le trajet': {en: 'Rename route', zh: '重命名路线', hi: 'मार्ग का नाम बदलें', es: 'Renombrar ruta', ar: 'إعادة تسمية المسار'},
+  'Nouveau nom du trajet': {en: 'New route name', zh: '路线新名称', hi: 'मार्ग का नया नाम', es: 'Nuevo nombre de la ruta', ar: 'الاسم الجديد للمسار'},
+  'Trajet renommé.': {en: 'Route renamed.', zh: '路线已重命名。', hi: 'मार्ग का नाम बदल दिया गया।', es: 'Ruta renombrada.', ar: 'تمت إعادة تسمية المسار.'}
+});
 const translationTextNodes = new WeakMap();
 const translationAttributes = new WeakMap();
 let languageObserver = null;
@@ -1887,7 +1892,8 @@ async function stopNavigation() {
 }
 
 function savedItem(route, index) {
-  return `<div class="saved-item" data-route-index="${index}" role="button" tabindex="0" aria-label="Charger le trajet ${escapeHtml(route.title)}"><span class="saved-route-icon" aria-hidden="true">⌁</span><div class="saved-route-copy"><strong title="${escapeHtml(route.title)}">${escapeHtml(route.title)}</strong><span>${formatDistance(route.distance || 0)} · ${new Date(route.savedAt).toLocaleDateString(LANGUAGE_LOCALES[state.language] || 'fr-BE')}</span></div><button class="delete-saved" data-delete="${index}" aria-label="Supprimer ${escapeHtml(route.title)}">×</button></div>`;
+  const safeTitle = escapeHtml(route.title);
+  return `<div class="saved-item" data-route-index="${index}" role="button" tabindex="0" aria-label="Charger le trajet ${safeTitle}"><span class="saved-route-icon" aria-hidden="true">⌁</span><div class="saved-route-copy"><strong title="${safeTitle}">${safeTitle}</strong><span>${formatDistance(route.distance || 0)} · ${new Date(route.savedAt).toLocaleDateString(LANGUAGE_LOCALES[state.language] || 'fr-BE')}</span></div><button class="rename-saved" data-rename="${index}" aria-label="${localizedText('Renommer le trajet')} ${safeTitle}" title="${localizedText('Renommer le trajet')}">✎</button><button class="delete-saved" data-delete="${index}" aria-label="Supprimer ${safeTitle}">×</button></div>`;
 }
 
 function loadSavedRoute(index) {
@@ -1924,6 +1930,9 @@ function renderSaved() {
   const empty = '<p class="empty-saved">Aucun parcours enregistré.</p>';
   $('#saved-list').innerHTML = state.saved.length ? state.saved.map(savedItem).join('') : '<p class="empty-saved">Vos itinéraires favoris apparaîtront ici.</p>';
   $('#saved-modal-list').innerHTML = state.saved.length ? state.saved.map(savedItem).join('') : empty;
+  document.querySelectorAll('[data-rename]').forEach(button => button.addEventListener('click', event => {
+    event.stopPropagation(); renameSavedRoute(Number(button.dataset.rename));
+  }));
   document.querySelectorAll('[data-delete]').forEach(button => button.addEventListener('click', event => {
     event.stopPropagation(); state.saved.splice(Number(button.dataset.delete), 1); saveSaved(); toast('Parcours supprimé.');
   }));
@@ -1940,6 +1949,17 @@ function renderSaved() {
       }
     });
   });
+}
+function renameSavedRoute(index) {
+  const route = state.saved[index];
+  if (!route) return;
+  const value = window.prompt(localizedText('Nouveau nom du trajet'), route.title);
+  if (value === null) return;
+  const title = value.trim();
+  if (!title) return;
+  route.title = title;
+  saveSaved();
+  toast(localizedText('Trajet renommé.'));
 }
 function saveSaved() { localStorage.setItem('ct_saved_routes', JSON.stringify(state.saved)); renderSaved(); }
 
