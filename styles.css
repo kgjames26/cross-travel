@@ -935,3 +935,6 @@ html[dir="rtl"] .modal-label{text-align:right}
 
 .manual-stage-drag{display:grid;place-items:center}.manual-stage-drag svg{display:block;width:18px;height:18px}
 @media(max-width:520px){.manual-stage-drag svg{width:20px;height:20px}}
+
+/* Keep the vehicle pictogram upright while its map position follows GPS. */
+.nav-vehicle{transform:none!important}
