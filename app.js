@@ -355,27 +355,23 @@ function navigationVehicleAsset() {
   return ({family: 'assets/velo-familial.webp', road: 'assets/velo-route.webp', vtt: 'assets/vtt-dynamique.webp', moto: 'assets/motocross-calme.webp'})[state.mode] || 'assets/vtt-dynamique.webp';
 }
 function navigationVehicleClass() { return ({family: 'family', road: 'road', vtt: 'vtt', moto: 'moto'})[state.mode] || 'vtt'; }
-function createNavigationVehicleMarker(point, heading) {
+function createNavigationVehicleMarker(point) {
   const className = navigationVehicleClass();
-  const angle = ((heading - 90) % 360 + 360) % 360;
   const icon = L.divIcon({
     className: 'nav-vehicle-shell',
-    html: '<span class="nav-vehicle nav-vehicle-' + className + '" style="--vehicle-bearing:' + angle + 'deg"><img class="nav-vehicle-image" src="' + navigationVehicleAsset() + '" alt="' + className + '" /></span>',
+    html: '<span class="nav-vehicle nav-vehicle-' + className + '"><img class="nav-vehicle-image" src="' + navigationVehicleAsset() + '" alt="' + className + '" /></span>',
     iconSize: [50, 50], iconAnchor: [25, 25]
   });
   return L.marker([point.lat, point.lon], {icon, interactive: false, keyboard: false, zIndexOffset: 1500}).addTo(state.map);
 }
-function updateNavigationVehicleMarker(point, heading) {
+function updateNavigationVehicleMarker(point) {
   if (!state.navigationMarker || !state.map.hasLayer(state.navigationMarker)) {
-    state.navigationMarker = createNavigationVehicleMarker(point, heading);
+    state.navigationMarker = createNavigationVehicleMarker(point);
   } else {
     state.navigationMarker.setLatLng([point.lat, point.lon]);
   }
   const icon = state.navigationMarker.getElement()?.querySelector('.nav-vehicle');
-  if (icon) {
-    icon.style.setProperty('--vehicle-bearing', (((heading - 90) % 360 + 360) % 360) + 'deg');
-    icon.classList.toggle('is-moving', state.currentSpeedKmh >= 1.5);
-  }
+  if (icon) icon.classList.toggle('is-moving', state.currentSpeedKmh >= 1.5);
 }
 
 function createStartMarker(point) {
@@ -1279,18 +1275,6 @@ function nearestRouteProjection(point, minimumProgress = 0) {
 function nearestPathProgress(point) {
   return nearestRouteProjection(point)?.progress || 0;
 }
-function routeBearingAtPoint(point) {
-  const projection = nearestRouteProjection(point, Math.max(0, state.navigationProgress - 0.01));
-  if (!projection) return state.navigationHeading ?? state.lastMapBearing ?? 0;
-  const path = state.route?.path || [];
-  const from = routeCoordinate(path[projection.segmentIndex]);
-  const to = routeCoordinate(path[projection.segmentIndex + 1]);
-  const radians = Math.PI / 180;
-  const lat1 = from.lat * radians, lat2 = to.lat * radians, deltaLon = (to.lon - from.lon) * radians;
-  const y = Math.sin(deltaLon) * Math.cos(lat2);
-  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(deltaLon);
-  return (Math.atan2(y, x) / radians + 360) % 360;
-}
 function navigationLetterName(index) {
   let visibleBefore = 0;
   for (let i = 0; i < Math.min(index, state.navigationViaPoints.length); i++) {
@@ -1798,8 +1782,7 @@ function updateNavigation(position) {
     ? new Date(sampleTime + remainingMeters / (averageSpeed / 3.6) * 1000).toLocaleTimeString(LANGUAGE_LOCALES[state.language] || 'fr-BE', {hour: '2-digit', minute: '2-digit'})
     : remainingMeters === 0 ? 'Arrivée' : 'Calcul en cours';
   $('#nav-gps-status').textContent = localizedText(state.currentSpeedKmh >= 1.5 ? 'En mouvement' : 'À l’arrêt') + ' · GPS ±' + formatProximity(accuracy);
-  const routeHeading = routeBearingAtPoint(point);
-  updateNavigationVehicleMarker(point, routeHeading);
+  updateNavigationVehicleMarker(point);
   const now = Date.now();
   if (state.navigationFollow) {
     // Le zoom automatique ne reprend qu’en suivi GPS, pour laisser le contrôle tactile libre.
