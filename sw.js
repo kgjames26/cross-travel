@@ -1,4 +1,4 @@
-const CACHE='cross-travel-shell-v55';
+const CACHE='cross-travel-shell-v56';
 const SHELL=['./','./index.html','./styles.css','./osm.css','./app.js','./manifest.webmanifest','./icons/icon.svg','./assets/vtt-dynamique.webp','./assets/motocross-calme.webp','./assets/velo-familial.webp','./assets/velo-route.webp','./assets/start-flag.svg','./assets/finish-flag.svg'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
