@@ -793,8 +793,8 @@ function updateNavigation(position) {
 }
 async function startNavigation() {
   if (!state.route) { toast(state.manualMode ? 'Ajoutez au moins une étape sur la carte.' : 'Calculez d’abord un itinéraire.'); return; }
-  if (state.manualMode) finishManualMode();
   if (!navigator.geolocation) { toast('La géolocalisation n’est pas disponible sur cet appareil.'); return; }
+  if (state.manualMode) finishManualMode();
   $('#nav-panel').classList.remove('hidden');
   document.body.classList.add('nav-active');
   $('#map-mode-label').textContent = 'NAVIGATION ' + (state.mode === 'family' ? 'VÉLO FAMILIAL' : state.mode === 'road' ? 'VÉLO DE ROUTE' : state.mode === 'moto' ? 'MOTOCROSS' : 'VTT') + ' ACTIVE';
