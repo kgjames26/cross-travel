@@ -844,3 +844,7 @@ body.nav-action-open .nav-panel{background:rgba(13,22,17,.18);backdrop-filter:no
 .resume-trip-button{min-height:38px;padding:0 14px;border:0;border-radius:9px;background:var(--mode-accent);color:var(--mode-deep,#17221a);font:700 12px 'DM Sans',sans-serif;cursor:pointer}
 .resume-trip-forget{width:32px;height:32px;border:0;border-radius:8px;background:#edf0ec;color:#536057;font-size:20px;cursor:pointer}
 @media(max-width:520px){.resume-trip-card{gap:8px;padding:11px}.resume-trip-copy strong{max-width:170px;font-size:12px}.resume-trip-copy>span:last-child{font-size:10px}.resume-trip-button{padding:0 10px;font-size:11px}}
+
+.start-logo-shell{border:0;background:transparent}
+.start-logo-marker{display:block;width:78px;height:38px;padding:2px;overflow:hidden;border:2px solid var(--mode-strong,#24382b);border-radius:9px;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.32)}
+.start-logo-marker img{display:block;width:100%;height:100%;object-fit:contain}
