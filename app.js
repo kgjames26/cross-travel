@@ -238,6 +238,7 @@ const I18N_ROWS = [
 ];
 const UI_TRANSLATIONS = Object.fromEntries(I18N_ROWS.map(row => [row[0], {en: row[1], zh: row[2], hi: row[3], es: row[4], ar: row[5]}]));
 Object.assign(UI_TRANSLATIONS, {
+  'Glisser pour déplacer': {en: 'Drag to move', zh: '拖动以移动', hi: 'खींचकर स्थान बदलें', es: 'Arrastra para mover', ar: 'اسحب للتحريك'},
   'Renommer le trajet': {en: 'Rename route', zh: '重命名路线', hi: 'मार्ग का नाम बदलें', es: 'Renombrar ruta', ar: 'إعادة تسمية المسار'},
   'Nouveau nom du trajet': {en: 'New route name', zh: '路线新名称', hi: 'मार्ग का नया नाम', es: 'Nuevo nombre de la ruta', ar: 'الاسم الجديد للمسار'},
   'Trajet renommé.': {en: 'Route renamed.', zh: '路线已重命名。', hi: 'मार्ग का नाम बदल दिया गया।', es: 'Ruta renombrada.', ar: 'تمت إعادة تسمية المسار.'}
@@ -814,7 +815,7 @@ function renderManualTrack() {
     const isFinish = i === points.length - 1;
     const badge = isFinish ? '🏁' : label;
     const stageName = isFinish ? 'Arrivée' : `Étape ${label}`;
-    rows.push(`<li class="manual-stage-row"><span class="manual-stage-badge${isFinish ? ' manual-stage-finish' : ''}">${badge}</span><div class="manual-stage-copy"><strong>${stageName}</strong><span>${points[i].lat.toFixed(5)}, ${points[i].lon.toFixed(5)} · ${details}</span><small>${cumulativeLabel}</small></div><div class="manual-stage-controls"><button class="manual-stage-order" type="button" data-move-manual="${i}" data-direction="-1" aria-label="Monter ${stageName}" ${i === 1 || (state.manualDestinationLocked && i === points.length - 1) ? 'disabled' : ''}>↑</button><button class="manual-stage-order" type="button" data-move-manual="${i}" data-direction="1" aria-label="Descendre ${stageName}" ${i === points.length - 1 ? 'disabled' : ''}>↓</button><button class="manual-remove-step" type="button" data-manual-remove="${i}" aria-label="Supprimer ${stageName}">×</button></div></li>`);
+    rows.push(`<li class="manual-stage-row" data-manual-stage data-point-index="${i}"><span class="manual-stage-badge${isFinish ? ' manual-stage-finish' : ''}">${badge}</span><div class="manual-stage-copy"><strong>${stageName}</strong><span>${points[i].lat.toFixed(5)}, ${points[i].lon.toFixed(5)} · ${details}</span><small>${cumulativeLabel}</small></div><div class="manual-stage-controls">${!(isFinish && state.manualDestinationLocked) ? `<button class="manual-stage-drag" type="button" data-drag-manual aria-label="${localizedText('Glisser pour déplacer')} ${stageName}" title="${localizedText('Glisser pour déplacer')}" aria-keyshortcuts="ArrowUp ArrowDown">⠿</button>` : ''}<button class="manual-remove-step" type="button" data-manual-remove="${i}" aria-label="Supprimer ${stageName}">×</button></div></li>`);
   }
   if (points.length > 1) {
     const returnLeg = state.manualReturnToStart ? state.manualLegs.at(-1) : null;
@@ -829,12 +830,73 @@ function renderManualTrack() {
   $('#manual-stage-list').querySelectorAll('[data-manual-remove]').forEach(button => button.addEventListener('click', () => {
     removeManualWaypoint(Number(button.dataset.manualRemove));
   }));
-  $('#manual-stage-list').querySelectorAll('[data-move-manual]').forEach(button => button.addEventListener('click', () => {
-    const index = Number(button.dataset.moveManual), next = index + Number(button.dataset.direction);
-    if (index < 1 || next < 1 || next >= state.manualPoints.length) return;
-    [state.manualPoints[index], state.manualPoints[next]] = [state.manualPoints[next], state.manualPoints[index]];
-    updateManualTrack();
-  }));
+  const stageList = $('#manual-stage-list');
+  stageList.querySelectorAll('[data-drag-manual]').forEach(handle => {
+    handle.addEventListener('keydown', event => {
+      if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+      event.preventDefault();
+      const row = handle.closest('[data-manual-stage]');
+      const index = Number(row?.dataset.pointIndex);
+      const next = index + (event.key === 'ArrowUp' ? -1 : 1);
+      if (!row || index < 1 || next < 1 || next >= state.manualPoints.length) return;
+      if (state.manualDestinationLocked && next === state.manualPoints.length - 1) return;
+      [state.manualPoints[index], state.manualPoints[next]] = [state.manualPoints[next], state.manualPoints[index]];
+      updateManualTrack();
+      requestAnimationFrame(() => stageList.querySelector(`[data-point-index="${next}"] [data-drag-manual]`)?.focus());
+    });
+    handle.addEventListener('pointerdown', event => {
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      const row = handle.closest('[data-manual-stage]');
+      const index = Number(row?.dataset.pointIndex);
+      if (!row || index < 1 || (state.manualDestinationLocked && index === state.manualPoints.length - 1)) return;
+      event.preventDefault();
+      const drag = {pointerId: event.pointerId, row, startX: event.clientX, startY: event.clientY, moved: false};
+      row.classList.add('is-dragging');
+      stageList.classList.add('is-reordering');
+      handle.setPointerCapture?.(event.pointerId);
+      const cleanup = () => {
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onEnd);
+        document.removeEventListener('pointercancel', onCancel);
+        drag.row.classList.remove('is-dragging');
+        stageList.classList.remove('is-reordering');
+        stageList.querySelectorAll('.is-drop-target').forEach(node => node.classList.remove('is-drop-target'));
+      };
+      const onMove = moveEvent => {
+        if (moveEvent.pointerId !== drag.pointerId) return;
+        const distance = Math.hypot(moveEvent.clientX - drag.startX, moveEvent.clientY - drag.startY);
+        if (distance < 5) return;
+        drag.moved = true;
+        moveEvent.preventDefault();
+        const target = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)?.closest('[data-manual-stage]');
+        if (!target || !stageList.contains(target) || target === drag.row) return;
+        const targetIndex = Number(target.dataset.pointIndex);
+        if (targetIndex < 1 || (state.manualDestinationLocked && targetIndex === state.manualPoints.length - 1)) return;
+        stageList.querySelectorAll('.is-drop-target').forEach(node => node.classList.remove('is-drop-target'));
+        target.classList.add('is-drop-target');
+        const after = moveEvent.clientY > target.getBoundingClientRect().top + target.offsetHeight / 2;
+        const reference = after ? target.nextElementSibling : target;
+        if (reference !== drag.row && reference !== drag.row.nextElementSibling) stageList.insertBefore(drag.row, reference);
+      };
+      const onEnd = endEvent => {
+        if (endEvent.pointerId !== drag.pointerId) return;
+        cleanup();
+        if (!drag.moved) return;
+        const orderedIndices = [...stageList.querySelectorAll('[data-manual-stage]')].map(row => Number(row.dataset.pointIndex));
+        if (orderedIndices.length !== state.manualPoints.length - 1) { renderManualTrack(); return; }
+        state.manualPoints = [state.manualPoints[0], ...orderedIndices.map(pointIndex => state.manualPoints[pointIndex])];
+        updateManualTrack();
+      };
+      const onCancel = cancelEvent => {
+        if (cancelEvent.pointerId !== drag.pointerId) return;
+        cleanup();
+        renderManualTrack();
+      };
+      document.addEventListener('pointermove', onMove, {passive: false});
+      document.addEventListener('pointerup', onEnd);
+      document.addEventListener('pointercancel', onCancel);
+    });
+  });
 
   if (points.length > 1) {
     state.destination = state.manualReturnToStart ? points[0] : points.at(-1);
