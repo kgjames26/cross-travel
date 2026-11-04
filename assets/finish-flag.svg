@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="149" viewBox="0 0 320 149" role="img" aria-labelledby="title">
+  <title id="title">FINISH, drapeau à damier</title>
+  <defs>
+    <pattern id="check" width="24" height="24" patternUnits="userSpaceOnUse">
+      <rect width="12" height="12" fill="#17221a"/>
+      <rect x="12" y="12" width="12" height="12" fill="#17221a"/>
+    </pattern>
+    <clipPath id="flag-shape">
+      <path d="M31 18 C58 8 80 11 103 18 C125 25 145 25 162 18 L162 77 C139 84 119 81 96 74 C72 67 51 68 31 79 Z"/>
+    </clipPath>
+  </defs>
+  <path d="M25 15 V132" fill="none" stroke="#17221a" stroke-width="8" stroke-linecap="round"/>
+  <rect x="27" y="8" width="140" height="85" fill="url(#check)" clip-path="url(#flag-shape)"/>
+  <path d="M31 18 C58 8 80 11 103 18 C125 25 145 25 162 18 L162 77 C139 84 119 81 96 74 C72 67 51 68 31 79 Z" fill="none" stroke="#17221a" stroke-width="4" stroke-linejoin="round"/>
+  <text x="158" y="99" fill="#17221a" font-family="Arial, Helvetica, sans-serif" font-size="39" font-weight="900" letter-spacing=".2">FINISH</text>
+</svg>
