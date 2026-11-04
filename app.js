@@ -912,8 +912,9 @@ async function recalculateNavigationRoute(message = 'Parcours recalculé.') {
   const version = ++state.navigationRerouteVersion;
   const center = state.map.getCenter(), zoom = state.map.getZoom();
   const origin = state.lastPosition || state.origin;
-  const orderedVias = [...state.navigationViaPoints].sort((a, b) => a.progress - b.progress);
-  const targets = [...orderedVias.map(item => ({lat: item.lat, lon: item.lon})), state.destination];
+  // Repositionne les étapes sur le tracé courant avant de les trier : une nouvelle étape s’insère ainsi entre les deux passages qui l’encadrent.
+  state.navigationViaPoints = state.navigationViaPoints.map(item => ({...item, progress: nearestPathProgress(item)})).sort((a, b) => a.progress - b.progress);
+  const targets = [...state.navigationViaPoints.map(item => ({lat: item.lat, lon: item.lon})), state.destination];
   try {
     const routes = [];
     let cursor = origin;
