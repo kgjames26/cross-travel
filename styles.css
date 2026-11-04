@@ -846,7 +846,7 @@ body.nav-action-open .nav-panel{background:rgba(13,22,17,.18);backdrop-filter:no
 @media(max-width:520px){.resume-trip-card{gap:8px;padding:11px}.resume-trip-copy strong{max-width:170px;font-size:12px}.resume-trip-copy>span:last-child{font-size:10px}.resume-trip-button{padding:0 10px;font-size:11px}}
 
 .start-logo-shell{border:0;background:transparent}
-.start-logo-marker{display:block;width:78px;height:38px;padding:2px;overflow:hidden;border:2px solid var(--mode-strong,#24382b);border-radius:9px;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.32)}
+.start-logo-marker{display:block;width:58px;height:28px;padding:0;overflow:visible;border:0;border-radius:0;background:transparent;box-shadow:none;filter:drop-shadow(0 0 1px #fff) drop-shadow(0 1px 2px rgba(0,0,0,.95))}
 .start-logo-marker img{display:block;width:100%;height:100%;object-fit:contain}
 
 .nav-detour-status{display:flex;align-items:center;gap:8px;margin:9px 0;padding:8px;border:1px solid rgba(255,255,255,.18);border-radius:9px;background:rgba(10,18,14,.84);color:#fff;pointer-events:auto}
@@ -854,3 +854,15 @@ body.nav-action-open .nav-panel{background:rgba(13,22,17,.18);backdrop-filter:no
 .nav-detour-status button{flex:none;padding:6px 9px;border:0;border-radius:7px;background:var(--mode-accent);color:var(--mode-deep,#17221a);font:700 10px 'DM Sans',sans-serif;cursor:pointer}
 .nav-point-draft{background:var(--mode-accent);color:var(--mode-deep,#17221a);border-style:dashed}
 @media(max-width:520px){.nav-detour-status{gap:6px;padding:7px}.nav-detour-status span{font-size:10px}.nav-detour-status button{padding:6px;font-size:9px}}
+
+.nav-vehicle-shell{border:0;background:transparent}
+.nav-vehicle{display:grid;place-items:center;width:50px;height:50px;border:1px solid rgba(18,28,22,.58);border-radius:50%;background:rgba(255,255,255,.5);box-shadow:0 2px 8px rgba(0,0,0,.4);transform:rotate(var(--vehicle-bearing,0deg));transform-origin:center;overflow:visible}
+.nav-vehicle-image{display:block;width:44px;height:44px;object-fit:contain;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));transform-origin:center}
+.nav-vehicle.is-moving.nav-vehicle-family .nav-vehicle-image,.nav-vehicle.is-moving.nav-vehicle-road .nav-vehicle-image,.nav-vehicle.is-moving.nav-vehicle-vtt .nav-vehicle-image{animation:vehicle-pedal .42s ease-in-out infinite}
+.nav-vehicle.is-moving.nav-vehicle-moto .nav-vehicle-image{animation:vehicle-speed .13s linear infinite}
+@keyframes vehicle-pedal{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-2px) rotate(1deg)}}
+@keyframes vehicle-speed{0%,100%{transform:translate(0,0) rotate(-.7deg)}25%{transform:translate(1px,-.5px) rotate(.7deg)}50%{transform:translate(-.6px,.6px) rotate(-.5deg)}75%{transform:translate(.5px,-.7px) rotate(.4deg)}}
+@media(prefers-reduced-motion:reduce){.nav-vehicle.is-moving .nav-vehicle-image{animation:none}}
+#units-example{margin:2px 0 12px}
+.modal{max-height:calc(100dvh - 32px);overflow-y:auto}
+html[dir="rtl"] .modal-label{text-align:right}
