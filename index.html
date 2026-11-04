@@ -69,6 +69,18 @@
           <p class="api-note" id="api-note"><span class="note-icon">i</span> Carte OpenStreetMap. Le vélo de route privilégie un trajet rapide sur chaussée adaptée et pistes cyclables. La moto favorise les routes secondaires et évite les grands axes selon les accès moto cartographiés.</p>
         </div>
 
+        <section class="resume-trip-card hidden" id="resume-trip-card" aria-label="Reprendre le dernier trajet">
+          <div class="resume-trip-copy">
+            <span class="section-kicker">TRAJET EN COURS</span>
+            <strong id="resume-trip-title">Votre itinéraire</strong>
+            <span id="resume-trip-progress">Dernière position enregistrée</span>
+          </div>
+          <div class="resume-trip-actions">
+            <button class="resume-trip-button" id="resume-navigation" type="button">Reprendre</button>
+            <button class="resume-trip-forget" id="forget-resume" type="button" aria-label="Oublier le trajet précédent">×</button>
+          </div>
+        </section>
+
         <section class="manual-route-panel hidden" id="manual-route-panel" aria-label="Étapes du tracé manuel">
           <div class="manual-route-heading"><div><span class="section-kicker">TRACÉ MANUEL</span><h2>Étapes du parcours</h2></div><strong id="manual-total-distance">0,00 km</strong></div>
           <p class="manual-route-note" id="manual-route-note">Départ depuis le point choisi. Touchez la carte pour ajouter les étapes suivantes.</p>
