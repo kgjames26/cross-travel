@@ -1317,7 +1317,7 @@ async function startNavigation(resuming = false) {
     state.distanceTravelledMeters = 0; state.movingDistanceMeters = 0; state.movingSeconds = 0;
     state.currentStep = 0; state.routeStartDistanceTravelled = 0; state.navigationHeading = null;
   }
-  state.currentSpeedKmh = 0; state.previousGpsSample = null; state.lastNavigationZoomAt = 0;
+  state.currentSpeedKmh = 0; state.previousGpsSample = resuming && state.lastPosition ? {point: {...state.lastPosition}, time: Date.now()} : null; state.lastNavigationZoomAt = 0;
   state.lastSpokenStep = resuming ? Math.max(-1, state.currentStep - 1) : -1;
   if (state.mode === 'moto' && !resuming) announceStep(0);
   else speakText(state.mode === 'family' ? state.familyFast ? 'Navigation vélo familial rapide démarrée. Suivez l’itinéraire.' : 'Navigation vélo familial démarrée. Suivez le RAVeL.' : state.mode === 'road' ? 'Navigation vélo de route démarrée. Suivez l’itinéraire rapide.' : 'Navigation VTT démarrée. Suivez le tracé.');
