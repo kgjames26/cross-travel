@@ -241,7 +241,23 @@ Object.assign(UI_TRANSLATIONS, {
   'Glisser pour déplacer': {en: 'Drag to move', zh: '拖动以移动', hi: 'खींचकर स्थान बदलें', es: 'Arrastra para mover', ar: 'اسحب للتحريك'},
   'Renommer le trajet': {en: 'Rename route', zh: '重命名路线', hi: 'मार्ग का नाम बदलें', es: 'Renombrar ruta', ar: 'إعادة تسمية المسار'},
   'Nouveau nom du trajet': {en: 'New route name', zh: '路线新名称', hi: 'मार्ग का नया नाम', es: 'Nuevo nombre de la ruta', ar: 'الاسم الجديد للمسار'},
-  'Trajet renommé.': {en: 'Route renamed.', zh: '路线已重命名。', hi: 'मार्ग का नाम बदल दिया गया।', es: 'Ruta renombrada.', ar: 'تمت إعادة تسمية المسار.'}
+  'Trajet renommé.': {en: 'Route renamed.', zh: '路线已重命名。', hi: 'मार्ग का नाम बदल दिया गया।', es: 'Ruta renombrada.', ar: 'تمت إعادة تسمية المسار.'},
+  'Continuez tout droit': {en: 'Continue straight', zh: '直行', hi: 'सीधे आगे बढ़ें', es: 'Sigue recto', ar: 'تابع مباشرة'},
+  'Tournez à gauche': {en: 'Turn left', zh: '左转', hi: 'बाएँ मुड़ें', es: 'Gira a la izquierda', ar: 'انعطف يسارًا'},
+  'Tournez légèrement à gauche': {en: 'Bear slightly left', zh: '稍向左', hi: 'थोड़ा बाएँ मुड़ें', es: 'Gira ligeramente a la izquierda', ar: 'اتجه قليلًا إلى اليسار'},
+  'Prenez franchement à gauche': {en: 'Turn sharply left', zh: '急左转', hi: 'तेज़ी से बाएँ मुड़ें', es: 'Gira bruscamente a la izquierda', ar: 'انعطف بشدة إلى اليسار'},
+  'Tournez à droite': {en: 'Turn right', zh: '右转', hi: 'दाएँ मुड़ें', es: 'Gira a la derecha', ar: 'انعطف يمينًا'},
+  'Tournez légèrement à droite': {en: 'Bear slightly right', zh: '稍向右', hi: 'थोड़ा दाएँ मुड़ें', es: 'Gira ligeramente a la derecha', ar: 'اتجه قليلًا إلى اليمين'},
+  'Prenez franchement à droite': {en: 'Turn sharply right', zh: '急右转', hi: 'तेज़ी से दाएँ मुड़ें', es: 'Gira bruscamente a la derecha', ar: 'انعطف بشدة إلى اليمين'},
+  'Restez à gauche': {en: 'Keep left', zh: '靠左行驶', hi: 'बाईं ओर रहें', es: 'Mantente a la izquierda', ar: 'ابقَ إلى اليسار'},
+  'Restez à droite': {en: 'Keep right', zh: '靠右行驶', hi: 'दाईं ओर रहें', es: 'Mantente a la derecha', ar: 'ابقَ إلى اليمين'},
+  'Faites demi-tour': {en: 'Make a U-turn', zh: '掉头', hi: 'यू-टर्न लें', es: 'Da la vuelta', ar: 'استدر للخلف'},
+  'Faites demi-tour à droite': {en: 'Make a right U-turn', zh: '向右掉头', hi: 'दाईं ओर यू-टर्न लें', es: 'Da la vuelta a la derecha', ar: 'استدر للخلف إلى اليمين'},
+  'Rejoignez l’itinéraire': {en: 'Rejoin the route', zh: '重新回到路线', hi: 'मार्ग पर वापस आएँ', es: 'Vuelve a la ruta', ar: 'عُد إلى المسار'},
+  'Continuez sur le chemin': {en: 'Continue along the trail', zh: '沿小路继续前行', hi: 'पगडंडी पर आगे बढ़ें', es: 'Continúa por el camino', ar: 'تابع على المسار'},
+  'Continuez jusqu’à l’arrivée': {en: 'Continue to the finish', zh: '继续前往终点', hi: 'मंज़िल तक आगे बढ़ें', es: 'Continúa hasta la llegada', ar: 'تابع حتى الوصول'},
+  'Retournez au point de départ': {en: 'Return to the starting point', zh: '返回起点', hi: 'शुरुआती बिंदु पर लौटें', es: 'Vuelve al punto de partida', ar: 'عُد إلى نقطة الانطلاق'},
+  'Prenez franchement le virage': {en: 'Take the sharp turn', zh: '急转弯', hi: 'तेज़ मोड़ लें', es: 'Toma el giro cerrado', ar: 'انعطف بحدة'}
 });
 const translationTextNodes = new WeakMap();
 const translationAttributes = new WeakMap();
@@ -254,6 +270,16 @@ function localizedText(source, language = state.language) {
     const parts = source.slice(6).split(' / ');
     const prefixes = {en: 'Step ', zh: '步骤 ', hi: 'चरण ', es: 'Etapa ', ar: 'المرحلة '};
     if (parts.every(part => /^[0-9]+$/.test(part))) return prefixes[language] + parts.join(' / ');
+  }
+  const roundabout = source.match(/^Au rond-point, prenez la sortie (\d+)$/);
+  if (roundabout) {
+    const exit = roundabout[1];
+    return {en: `At the roundabout, take exit ${exit}`, zh: `在环岛走第${exit}个出口`, hi: `गोलचक्कर पर ${exit}वां निकास लें`, es: `En la rotonda, toma la salida ${exit}`, ar: `عند الدوار، اسلك المخرج ${exit}`}[language] || source;
+  }
+  const stage = source.match(/^Continuez jusqu’à l’étape (.+)$/);
+  if (stage) {
+    const name = stage[1];
+    return {en: `Continue to stop ${name}`, zh: `继续前往途经点 ${name}`, hi: `अगले पड़ाव ${name} तक जाएँ`, es: `Continúa hasta la etapa ${name}`, ar: `تابع إلى النقطة ${name}`}[language] || source;
   }
   const nextSuffix = ' avant la prochaine étape';
   if (source.endsWith(nextSuffix)) {
@@ -608,6 +634,29 @@ function normalizeValhalla(payload) {
   };
 }
 
+function brouterInstruction(command, exitNumber = 0) {
+  const exit = Math.max(1, Number(exitNumber) || 1);
+  const instructions = {
+    1: 'Continuez tout droit',
+    2: 'Tournez à gauche',
+    3: 'Tournez légèrement à gauche',
+    4: 'Prenez franchement à gauche',
+    5: 'Tournez à droite',
+    6: 'Tournez légèrement à droite',
+    7: 'Prenez franchement à droite',
+    8: 'Restez à gauche',
+    9: 'Restez à droite',
+    10: 'Faites demi-tour',
+    11: 'Faites demi-tour à droite',
+    12: 'Rejoignez l’itinéraire',
+    13: `Au rond-point, prenez la sortie ${exit}`,
+    14: `Au rond-point, prenez la sortie ${exit}`,
+    15: 'Faites demi-tour',
+    16: 'Continuez sur le chemin'
+  };
+  return instructions[Number(command)] || '';
+}
+
 function normalizeBRouter(payload) {
   const feature = payload.features?.find(item => item.geometry?.type === 'LineString');
   if (!feature) throw new Error(payload.error || 'BRouter n’a pas trouvé de parcours pour ces points.');
@@ -618,46 +667,67 @@ function normalizeBRouter(payload) {
   const props = feature.properties || {};
   if (Number(props['track-length']) > 0) distanceMeters = Number(props['track-length']);
   const durationSeconds = Number(props['total-time']) > 0 ? Number(props['total-time']) : distanceMeters / 1000 / 10 * 3600;
-  const steps = [];
-  let previousIndex = 0, lastTurnAt = 0;
   const distanceAt = [0];
   for (let i = 1; i < path.length; i++) distanceAt[i] = distanceAt[i - 1] + L.latLng(path[i - 1]).distanceTo(L.latLng(path[i]));
-  const nearestBefore = (index, meters) => {
-    let cursor = index;
-    while (cursor > 0 && distanceAt[index] - distanceAt[cursor] < meters) cursor--;
-    return cursor;
-  };
-  const nearestAfter = (index, meters) => {
-    let cursor = index;
-    while (cursor < path.length - 1 && distanceAt[cursor] - distanceAt[index] < meters) cursor++;
-    return cursor;
-  };
-  const bearing = (a, b) => {
-    const rad = value => value * Math.PI / 180;
-    const y = Math.sin(rad(b[1] - a[1])) * Math.cos(rad(b[0]));
-    const x = Math.cos(rad(a[0])) * Math.sin(rad(b[0])) - Math.sin(rad(a[0])) * Math.cos(rad(b[0])) * Math.cos(rad(b[1] - a[1]));
-    return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
-  };
-  for (let i = 1; i < path.length - 1; i++) {
-    if (distanceAt[i] - lastTurnAt < 120 || distanceAt[i] - distanceAt[previousIndex] < 80) continue;
-    const before = nearestBefore(i, 25), after = nearestAfter(i, 25);
-    if (before === i || after === i) continue;
-    const delta = ((bearing(path[before], path[after]) - bearing(path[before], path[i]) + 540) % 360) - 180;
-    if (Math.abs(delta) < 55) continue;
-    const end = path[i];
+  const steps = [];
+  let previousIndex = 0;
+  const hints = Array.isArray(props.voicehints) ? [...props.voicehints].sort((a, b) => Number(a?.[0]) - Number(b?.[0])) : [];
+  for (const hint of hints) {
+    const hintIndex = Number(hint?.[0]);
+    if (!Number.isFinite(hintIndex)) continue;
+    const index = Math.min(path.length - 1, Math.max(0, Math.round(hintIndex)));
+    const instructions = brouterInstruction(hint?.[1], hint?.[2]);
+    if (!instructions || index <= previousIndex) continue;
     steps.push({
-      instructions: Math.abs(delta) > 135 ? 'Prenez le virage serré' : delta > 0 ? 'Tournez à droite' : 'Tournez à gauche',
-      distanceMeters: distanceAt[i] - distanceAt[previousIndex],
-      endLocation: {lat: end[0], lon: end[1]}, path: path.slice(previousIndex, i + 1)
+      instructions,
+      distanceMeters: distanceAt[index] - distanceAt[previousIndex],
+      endLocation: {lat: path[index][0], lon: path[index][1]},
+      path: path.slice(previousIndex, index + 1)
     });
-    previousIndex = i; lastTurnAt = distanceAt[i];
+    previousIndex = index;
   }
-  const finalPoint = path.at(-1);
-  steps.push({instructions: 'Continuez jusqu’à l’arrivée', distanceMeters: distanceAt.at(-1) - distanceAt[previousIndex], endLocation: {lat: finalPoint[0], lon: finalPoint[1]}, path: path.slice(previousIndex)});
-  return {
-    path, distanceMeters, durationSeconds,
-    legs: [{steps}]
-  };
+
+  if (!steps.length) {
+    let lastTurnAt = 0;
+    const nearestBefore = (index, meters) => {
+      let cursor = index;
+      while (cursor > 0 && distanceAt[index] - distanceAt[cursor] < meters) cursor--;
+      return cursor;
+    };
+    const nearestAfter = (index, meters) => {
+      let cursor = index;
+      while (cursor < path.length - 1 && distanceAt[cursor] - distanceAt[index] < meters) cursor++;
+      return cursor;
+    };
+    const bearing = (a, b) => {
+      const rad = value => value * Math.PI / 180;
+      const y = Math.sin(rad(b[1] - a[1])) * Math.cos(rad(b[0]));
+      const x = Math.cos(rad(a[0])) * Math.sin(rad(b[0])) - Math.sin(rad(a[0])) * Math.cos(rad(b[0])) * Math.cos(rad(b[1] - a[1]));
+      return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+    };
+    for (let i = 1; i < path.length - 1; i++) {
+      if (distanceAt[i] - lastTurnAt < 35 || distanceAt[i] - distanceAt[previousIndex] < 30) continue;
+      const before = nearestBefore(i, 20), after = nearestAfter(i, 20);
+      if (before === i || after === i) continue;
+      const delta = ((bearing(path[before], path[after]) - bearing(path[before], path[i]) + 540) % 360) - 180;
+      if (Math.abs(delta) < 32) continue;
+      const instructions = Math.abs(delta) > 145 ? 'Prenez franchement le virage' : delta > 0 ? 'Tournez à droite' : 'Tournez à gauche';
+      steps.push({instructions, distanceMeters: distanceAt[i] - distanceAt[previousIndex], endLocation: {lat: path[i][0], lon: path[i][1]}, path: path.slice(previousIndex, i + 1)});
+      previousIndex = i;
+      lastTurnAt = distanceAt[i];
+    }
+  }
+
+  if (previousIndex < path.length - 1 || !steps.length) {
+    const finalPoint = path.at(-1);
+    steps.push({
+      instructions: 'Continuez jusqu’à l’arrivée',
+      distanceMeters: distanceAt.at(-1) - distanceAt[previousIndex],
+      endLocation: {lat: finalPoint[0], lon: finalPoint[1]},
+      path: path.slice(previousIndex)
+    });
+  }
+  return {path, distanceMeters, durationSeconds, legs: [{steps}]};
 }
 
 async function requestBRouter(origin, destination) {
@@ -675,6 +745,7 @@ async function requestBRouter(origin, destination) {
     params.set('profile:hills', state.mode === 'family' ? '2' : '0');
     params.set('profile:avoid_unsafe', '1');
   }
+  params.set('timode', '3');
   const response = await fetch(`${BROUTER_URL}?${params}`);
   const responseText = await response.text();
   let payload;
@@ -754,10 +825,36 @@ async function requestManualSegment(origin, destination, signal, shortest = fals
     lonlats: `${origin.lon},${origin.lat}|${destination.lon},${destination.lat}`,
     profile: shortest ? 'shortest' : 'trekking', alternativeidx: '0', format: 'geojson'
   });
+  params.set('timode', '3');
   const response = await fetch(`${BROUTER_URL}?${params}`, {signal, headers: {'Accept': 'application/geo+json'}});
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || `BRouter indisponible (${response.status}).`);
   return normalizeBRouter(payload);
+}
+
+function manualLegNavigationSteps(leg, index, legCount) {
+  const rawSteps = Array.isArray(leg.steps) && leg.steps.length ? leg.steps : [{
+    instructions: 'Continuez jusqu’à l’arrivée',
+    distanceMeters: leg.distanceMeters,
+    endLocation: {lat: leg.path.at(-1)[0], lon: leg.path.at(-1)[1]},
+    path: leg.path
+  }];
+  return rawSteps.map((step, stepIndex) => {
+    const isLast = stepIndex === rawSteps.length - 1;
+    let instructions = step.instructions || 'Continuez sur le chemin';
+    if (isLast) {
+      instructions = state.manualReturnToStart && index === legCount - 1
+        ? 'Retournez au point de départ'
+        : index === legCount - 1
+          ? 'Continuez jusqu’à l’arrivée'
+          : `Continuez jusqu’à l’étape ${manualStepName(index)}`;
+    }
+    return {
+      ...step, instructions,
+      endLocation: step.endLocation || {lat: leg.path.at(-1)[0], lon: leg.path.at(-1)[1]},
+      path: step.path?.length ? step.path : leg.path
+    };
+  });
 }
 
 function manualExpectedLegCount() {
@@ -906,14 +1003,8 @@ function renderManualTrack() {
     const path = [];
     state.manualLegs.forEach((leg, index) => path.push(...(index ? leg.path.slice(1) : leg.path)));
     const speedKmh = state.mode === 'road' ? 22 : state.mode === 'moto' ? 20 : state.mode === 'family' ? state.familyFast ? 16 : 12 : 10;
-    const steps = state.manualLegs.map((leg, index) => ({
-      instructions: state.manualReturnToStart && index === points.length - 1
-        ? 'Retournez au point de départ'
-        : index === points.length - 2 ? 'Suivez le chemin jusqu’à l’arrivée' : `Suivez le chemin jusqu’à l’étape ${manualStepName(index)}`,
-      distanceMeters: leg.distanceMeters,
-      endLocation: {lat: leg.path.at(-1)[0], lon: leg.path.at(-1)[1]},
-      path: leg.path
-    }));
+    const steps = [];
+    state.manualLegs.forEach((leg, index) => steps.push(...manualLegNavigationSteps(leg, index, state.manualLegs.length)));
     state.route = {manual: true, path, distanceMeters: total, durationSeconds: total / (speedKmh / 3.6), legs: [{steps}]};
     state.currentStep = Math.min(state.currentStep, steps.length - 1);
     state.routeStartDistanceTravelled = state.distanceTravelledMeters;
@@ -944,7 +1035,7 @@ async function recalculateManualLegs(generation, controller) {
     try {
       const route = await requestManualSegment(origin, destination, controller.signal, isReturnLeg);
       if (controller.signal.aborted || generation !== state.manualRoutingVersion) return;
-      state.manualLegs[i] = {status: 'ready', path: route.path, distanceMeters: route.distanceMeters, durationSeconds: route.durationSeconds};
+      state.manualLegs[i] = {status: 'ready', path: route.path, distanceMeters: route.distanceMeters, durationSeconds: route.durationSeconds, steps: route.legs?.[0]?.steps || []};
     } catch (error) {
       if (controller.signal.aborted || generation !== state.manualRoutingVersion) return;
       state.manualLegs[i] = {status: 'error', error: error.message};
@@ -1192,10 +1283,10 @@ function currentStep() {
   return steps[Math.min(state.currentStep, Math.max(steps.length - 1, 0))];
 }
 
-function speakText(message) {
+function speakText(message, interrupt = true) {
   if (!state.voiceEnabled || !message) return;
   if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) return;
-  window.speechSynthesis.cancel();
+  if (interrupt) window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(message);
   utterance.lang = LANGUAGE_LOCALES[state.language] || 'fr-BE'; utterance.rate = 0.96; utterance.pitch = 1; utterance.volume = 1;
   const voicePrefix = utterance.lang.toLowerCase().split('-')[0];
@@ -1209,7 +1300,7 @@ function announceStep(index) {
   const step = state.route?.legs?.[0]?.steps?.[index];
   if (!step?.instructions) return;
   state.lastSpokenStep = index;
-  speakText(step.instructions);
+  speakText(localizedText(step.instructions), false);
 }
 
 function updateVoiceButton() {
@@ -1406,6 +1497,7 @@ async function insertNavigationVia(point) {
     refreshViaProgressFromSegments();
     state.route = combineNavigationSegments(state.navigationSegments);
     state.currentStep = 0;
+    state.lastSpokenStep = -1;
     state.routeStartDistanceTravelled = state.distanceTravelledMeters;
     drawRoute();
     state.map.setView(center, zoom, {animate: false});
@@ -1546,6 +1638,7 @@ async function finishNavigationDetour(endViaIndex, endpointOverride = null) {
     const steps = state.route.legs[0]?.steps || [];
     const nextStepIndex = steps.findIndex(step => nearestPathProgress(step.endLocation) >= state.navigationProgress - 0.001);
     state.currentStep = nextStepIndex >= 0 ? nextStepIndex : Math.max(0, steps.length - 1);
+    state.lastSpokenStep = state.currentStep - 1;
     drawRoute();
     state.map.setView(center, zoom, {animate: false});
     renderNavigationPoints();
@@ -1655,6 +1748,7 @@ async function requestNavigationSegment(origin, destination, signal) {
   if (state.navigationAvoids.length) {
     params.set('nogos', state.navigationAvoids.map(point => `${point.lon},${point.lat},60`).join('|'));
   }
+  params.set('timode', '3');
   const response = await fetch(`${BROUTER_URL}?${params}`, {signal, headers: {'Accept': 'application/geo+json'}});
   const text = await response.text();
   let payload;
@@ -1704,6 +1798,7 @@ async function recalculateNavigationRoute(message = 'Parcours recalculé.', rejo
     refreshViaProgressFromSegments();
     state.route = combineNavigationSegments(state.navigationSegments);
     state.currentStep = 0;
+    state.lastSpokenStep = -1;
     state.navigationProgress = 0;
     state.routeStartDistanceTravelled = state.distanceTravelledMeters;
     drawRoute();
@@ -1752,13 +1847,16 @@ function updateNavigation(position) {
   let step = currentStep();
   if (!step) return;
   let distance = state.map.distance([point.lat, point.lon], [step.endLocation.lat, step.endLocation.lon]);
-  const announcementIndex = state.route.manual ? state.currentStep : state.mode === 'moto' ? state.currentStep + 1 : state.currentStep;
-  if (distance <= 150) announceStep(announcementIndex);
-  if (distance < 35 && state.currentStep < steps.length - 1) {
-    state.currentStep++; step = currentStep();
+  if (distance <= 150) announceStep(state.currentStep);
+  let advanced = false;
+  while (distance < 35 && state.currentStep < steps.length - 1) {
+    state.currentStep++;
+    step = currentStep();
     distance = state.map.distance([point.lat, point.lon], [step.endLocation.lat, step.endLocation.lon]);
+    advanced = true;
   }
-  $('#nav-instruction').textContent = step.instructions;
+  if (advanced || distance <= 150) announceStep(state.currentStep);
+  $('#nav-instruction').textContent = localizedText(step.instructions);
   $('#nav-distance').textContent = formatProximity(distance) + ' avant la prochaine étape';
   $('#nav-step-count').textContent = 'Étape ' + (state.currentStep + 1) + ' / ' + steps.length;
   const routeMeters = Math.max(0, state.route.distanceMeters || 0);
@@ -1886,7 +1984,7 @@ async function startNavigation(resuming = false) {
   } else if (state.route.manual && state.manualLegs.length === state.navigationViaPoints.length + 1) {
     state.navigationSegments = state.manualLegs.map((leg, index) => ({
       path: leg.path, distanceMeters: leg.distanceMeters, durationSeconds: leg.durationSeconds,
-      legs: [{steps: [state.route.legs[0].steps[index]]}]
+      legs: [{steps: manualLegNavigationSteps(state.manualLegs[index], index, state.manualLegs.length)}]
     }));
   } else {
     state.navigationSegments = [{path: state.route.path, distanceMeters: state.route.distanceMeters, durationSeconds: state.route.durationSeconds, legs: state.route.legs}];
@@ -1906,8 +2004,8 @@ async function startNavigation(resuming = false) {
   }
   state.currentSpeedKmh = 0; state.previousGpsSample = resuming && state.lastPosition ? {point: {...state.lastPosition}, time: Date.now()} : null; state.lastNavigationZoomAt = 0;
   state.lastSpokenStep = resuming ? Math.max(-1, state.currentStep - 1) : -1;
-  if (state.mode === 'moto' && !resuming) announceStep(0);
-  else speakText(state.mode === 'family' ? state.familyFast ? 'Navigation vélo familial rapide démarrée. Suivez l’itinéraire.' : 'Navigation vélo familial démarrée. Suivez le RAVeL.' : state.mode === 'road' ? 'Navigation vélo de route démarrée. Suivez l’itinéraire rapide.' : 'Navigation VTT démarrée. Suivez le tracé.');
+  if (!resuming) speakText(state.mode === 'family' ? state.familyFast ? 'Navigation vélo familial rapide démarrée. Suivez l’itinéraire.' : 'Navigation vélo familial démarrée. Suivez le RAVeL.' : state.mode === 'road' ? 'Navigation vélo de route démarrée. Suivez l’itinéraire rapide.' : state.mode === 'moto' ? 'Navigation motocross démarrée. Suivez le parcours.' : 'Navigation VTT démarrée. Suivez le tracé.');
+  announceStep(state.currentStep);
   if ('wakeLock' in navigator) {
     try { state.wakeLock = await navigator.wakeLock.request('screen'); }
     catch { toast('Le maintien de l’écran n’a pas été autorisé par l’appareil.'); }
