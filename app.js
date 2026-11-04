@@ -1720,6 +1720,9 @@ function updateNavigation(position) {
       state.programmaticNavigationZoom = false;
       state.lastNavigationZoomAt = now;
     }
+  }
+  // Le zoom peut rester manuel, mais dès que le GPS confirme un déplacement, la position revient au centre.
+  if (state.navigationFollow || state.currentSpeedKmh >= 1.5) {
     state.map.panTo([point.lat, point.lon], {animate: false});
   }
   const closestRouteProjection = nearestRouteProjection(point, Math.max(0, state.navigationProgress - 0.015));
@@ -1935,7 +1938,7 @@ function setNavigationFollow(follow) {
   if (!document.body.classList.contains('nav-active')) return;
   state.navigationFollow = follow;
   const button = $('#center-map');
-  button.title = follow ? 'Suivi GPS actif · Recentrer' : 'Recentrer et reprendre le suivi GPS';
+  button.title = follow ? 'Suivi GPS actif · Recentrer' : 'Zoom manuel · centrage automatique pendant le déplacement';
   button.setAttribute('aria-label', button.title);
   button.classList.toggle('follow-paused', !follow);
 }
