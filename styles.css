@@ -798,3 +798,7 @@ body.nav-active .nav-footer{font-size:11px}
 .map-control.follow-paused{background:var(--mode-accent);color:var(--mode-deep);box-shadow:0 0 0 3px color-mix(in srgb,var(--mode-accent) 30%,transparent),0 3px 12px rgba(20,35,25,.18)}
 body.nav-active .leaflet-container{cursor:grab}
 body.nav-active .leaflet-container:active{cursor:grabbing}
+
+body.nav-active .nav-panel{pointer-events:none}
+body.nav-active .nav-panel button{pointer-events:auto}
+body.nav-active .leaflet-control-zoom{opacity:.72}
