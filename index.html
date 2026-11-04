@@ -65,8 +65,20 @@
             <p class="routing-note" id="routing-note">VTT : itinéraires cyclables, sentiers et pistes; les routes fréquentées sont pénalisées quand une alternative existe. Vérifiez le niveau technique et l’accès.</p>
           </div>
           <button class="primary-button" id="route-button"><span>Calculer mon itinéraire</span><svg viewBox="0 0 24 24"><path d="M5 12h13m-5-5 5 5-5 5"/></svg></button>
+          <button class="manual-mode-button" id="manual-mode-toggle" type="button" aria-pressed="false">Tracer manuellement sur la carte</button>
           <p class="api-note" id="api-note"><span class="note-icon">i</span> Carte OpenStreetMap. Le vélo de route privilégie un trajet rapide sur chaussée adaptée et pistes cyclables. La moto favorise les routes secondaires et évite les grands axes selon les accès moto cartographiés.</p>
         </div>
+
+        <section class="manual-route-panel hidden" id="manual-route-panel" aria-label="Étapes du tracé manuel">
+          <div class="manual-route-heading"><div><span class="section-kicker">TRACÉ MANUEL</span><h2>Étapes du parcours</h2></div><strong id="manual-total-distance">0,00 km</strong></div>
+          <p class="manual-route-note" id="manual-route-note">Départ depuis le point choisi. Touchez la carte pour ajouter les étapes suivantes.</p>
+          <ol class="manual-stage-list" id="manual-stage-list"></ol>
+          <div class="manual-route-actions">
+            <button class="secondary-button" id="manual-reset" type="button">Réinitialiser</button>
+            <button class="secondary-button" id="export-manual-gpx" type="button" disabled>Exporter GPX</button>
+          </div>
+          <p class="manual-access-note">Les segments sont des lignes droites entre les points. Cross Travel ne peut pas vérifier ici la présence d’un chemin ni ses droits d’accès : ne traversez pas une propriété privée ou une voie interdite.</p>
+        </section>
 
         <div class="route-result hidden" id="route-result">
           <div class="result-head"><div><span class="section-kicker">ITINÉRAIRE CALCULÉ</span><h2 id="route-title">Votre parcours</h2></div><button class="text-button" id="save-route">＋ Enregistrer</button></div>
@@ -92,6 +104,7 @@
           <span class="map-label label-one">FORÊT DE GOUGNIES</span><span class="map-label label-two">RAVeL</span><span class="map-label label-three">GÉRPINNES</span>
         </div>
         <div class="map-top-controls"><div class="map-badge"><span class="map-badge-dot"></span><span id="map-mode-label">CARTE DE REPÉRAGE</span></div><div class="map-top-actions"><button class="map-style-home" id="map-style-toggle-home" type="button" aria-pressed="false">Satellite</button><button class="map-control" id="center-map" title="Centrer sur ma position" aria-label="Centrer sur ma position">◎</button></div></div>
+        <div class="manual-map-hint hidden" id="manual-map-hint"><span id="manual-map-hint-text">Mode tracé manuel actif · touchez la carte pour ajouter une étape.</span><button id="manual-map-finish" type="button">Terminer</button></div>
         <div class="map-pick-hint hidden" id="map-pick-hint">Touchez la carte pour placer le <strong id="map-pick-label">départ</strong>. <button id="cancel-map-pick" type="button">Annuler</button></div>
         <div id="nav-panel" class="nav-panel hidden">
           <div class="nav-top"><span class="nav-live"><i></i> NAVIGATION ACTIVE</span><div class="nav-actions"><button id="map-style-toggle" class="voice-toggle map-style-toggle" type="button" aria-pressed="false">Satellite</button><button id="voice-toggle" class="voice-toggle" type="button" aria-pressed="true">Voix activée</button><button id="stop-navigation" class="nav-stop">Terminer</button></div></div>
