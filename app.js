@@ -12,14 +12,14 @@ const state = {
   origin: null, destination: null, currentStep: 0, watchId: null, wakeLock: null,
   lastPosition: null, navigationMarker: null, rerouting: false, lastRerouteAt: 0,
   lastGeocodeAt: 0, routeServer: localStorage.getItem('ct_route_server') || DEFAULT_ROUTER,
-  mode: localStorage.getItem('ct_mode') || 'vtt', mapPickTarget: null, manualMode: false, manualReturnToStart: false, manualPoints: [], manualLegs: [], manualMarkers: [], manualLine: null, manualController: null, manualRoutingVersion: 0,
+  mode: localStorage.getItem('ct_mode') || 'vtt', mapPickTarget: null, manualMode: false, manualReturnToStart: false, manualDestinationLocked: false, manualPoints: [], manualLegs: [], manualMarkers: [], manualLine: null, manualController: null, manualRoutingVersion: 0,
   seekIntense: localStorage.getItem('ct_seek_intense') === 'true',
   familyFast: localStorage.getItem('ct_family_fast') === 'true',
   voiceEnabled: localStorage.getItem('ct_voice_enabled') !== 'false', lastSpokenStep: -1,
   distanceTravelledMeters: 0, movingDistanceMeters: 0, movingSeconds: 0,
   currentSpeedKmh: 0, previousGpsSample: null, routeStartDistanceTravelled: 0, lastHeading: null, lastMapBearing: 0, navigationHeading: null, lastNavigationZoomAt: 0, navigationFollow: true, programmaticNavigationZoom: false,
   searchTimers: {}, searchControllers: {}, suggestions: {origin: [], destination: []},
-  navigationAvoids: [], navigationViaPoints: [], navigationSegments: [], navigationManualRoute: false, navigationPointLayers: [], navigationRerouteController: null, navigationRerouteVersion: 0,
+  navigationAvoids: [], navigationViaPoints: [], navigationSegments: [], navigationManualRoute: false, navigationDetour: null, navigationPointLayers: [], navigationRerouteController: null, navigationRerouteVersion: 0,
   navigationResumeSnapshot: readNavigationResumeSnapshot(), lastResumeSaveAt: 0, manualUndo: null,
   saved: JSON.parse(localStorage.getItem('ct_saved_routes') || '[]')
 };
@@ -79,7 +79,7 @@ function persistNavigationResume(force = false) {
     lastPosition: state.lastPosition, currentStep: state.currentStep,
     distanceTravelledMeters: state.distanceTravelledMeters, movingDistanceMeters: state.movingDistanceMeters,
     movingSeconds: state.movingSeconds, routeStartDistanceTravelled: state.routeStartDistanceTravelled,
-    manualPoints: state.manualPoints, manualLegs: state.manualLegs, manualReturnToStart: state.manualReturnToStart,
+    manualPoints: state.manualPoints, manualLegs: state.manualLegs, manualReturnToStart: state.manualReturnToStart, manualDestinationLocked: state.manualDestinationLocked, navigationDetour: state.navigationDetour,
     navigationHeading: state.navigationHeading, lastSpokenStep: state.lastSpokenStep
   };
   try {
@@ -551,7 +551,7 @@ function renderManualTrack() {
     const isFinish = i === points.length - 1;
     const badge = isFinish ? '🏁' : label;
     const stageName = isFinish ? 'Arrivée' : `Étape ${label}`;
-    rows.push(`<li class="manual-stage-row"><span class="manual-stage-badge${isFinish ? ' manual-stage-finish' : ''}">${badge}</span><div class="manual-stage-copy"><strong>${stageName}</strong><span>${points[i].lat.toFixed(5)}, ${points[i].lon.toFixed(5)} · ${details}</span><small>${cumulativeLabel}</small></div><div class="manual-stage-controls"><button class="manual-stage-order" type="button" data-move-manual="${i}" data-direction="-1" aria-label="Monter ${stageName}" ${i === 1 ? 'disabled' : ''}>↑</button><button class="manual-stage-order" type="button" data-move-manual="${i}" data-direction="1" aria-label="Descendre ${stageName}" ${i === points.length - 1 ? 'disabled' : ''}>↓</button><button class="manual-remove-step" type="button" data-manual-remove="${i}" aria-label="Supprimer ${stageName}">×</button></div></li>`);
+    rows.push(`<li class="manual-stage-row"><span class="manual-stage-badge${isFinish ? ' manual-stage-finish' : ''}">${badge}</span><div class="manual-stage-copy"><strong>${stageName}</strong><span>${points[i].lat.toFixed(5)}, ${points[i].lon.toFixed(5)} · ${details}</span><small>${cumulativeLabel}</small></div><div class="manual-stage-controls"><button class="manual-stage-order" type="button" data-move-manual="${i}" data-direction="-1" aria-label="Monter ${stageName}" ${i === 1 || (state.manualDestinationLocked && i === points.length - 1) ? 'disabled' : ''}>↑</button><button class="manual-stage-order" type="button" data-move-manual="${i}" data-direction="1" aria-label="Descendre ${stageName}" ${i === points.length - 1 ? 'disabled' : ''}>↓</button><button class="manual-remove-step" type="button" data-manual-remove="${i}" aria-label="Supprimer ${stageName}">×</button></div></li>`);
   }
   if (points.length > 1) {
     const returnLeg = state.manualReturnToStart ? state.manualLegs.at(-1) : null;
@@ -649,13 +649,20 @@ async function toggleManualMode() {
   try {
     const origin = await resolvePoint($('#origin-input'), state.origin);
     state.origin = origin;
+    const destinationText = $('#destination-input').value.trim();
+    const selectedDestination = state.destination || (destinationText ? await resolvePoint($('#destination-input'), state.destination) : null);
     const resumeTrack = Boolean(state.manualPoints.length > 1 && state.manualLegs.length === manualExpectedLegCount());
     if (!resumeTrack) {
       state.manualUndo = null;
       clearDisplayedRoute(); state.destination = null; state.manualReturnToStart = false;
-      $('#destination-input').value = ''; state.manualPoints = [origin]; state.manualLegs = []; state.currentStep = 0;
+      state.manualDestinationLocked = Boolean(selectedDestination && state.map.distance([origin.lat, origin.lon], [selectedDestination.lat, selectedDestination.lon]) > 3);
+      state.manualPoints = [origin];
+      if (state.manualDestinationLocked) state.manualPoints.push(selectedDestination);
+      else $('#destination-input').value = '';
+      state.manualLegs = []; state.currentStep = 0;
     } else if (state.manualPoints[0].lat !== origin.lat || state.manualPoints[0].lon !== origin.lon) {
       state.manualPoints = [origin]; state.manualLegs = []; clearDisplayedRoute();
+      state.manualDestinationLocked = false;
     }
     state.mapPickTarget = null; $('#map-pick-hint').classList.add('hidden');
     state.manualMode = true;
@@ -681,6 +688,7 @@ function resetManualTrack() {
   state.destination = null; $('#destination-input').value = ''; state.currentStep = 0;
   state.manualUndo = null;
   state.manualReturnToStart = false;
+  state.manualDestinationLocked = false;
   state.manualPoints = state.origin ? [state.origin] : [];
   state.manualLegs = [];
   if (state.manualPoints.length) updateManualTrack();
@@ -706,13 +714,17 @@ function removeManualWaypointAtMap(point) {
 
 function removeManualWaypoint(index) {
   if (index < 1 || index >= state.manualPoints.length) return;
+  const wasLockedDestination = state.manualDestinationLocked && index === state.manualPoints.length - 1;
+  if (wasLockedDestination) state.manualDestinationLocked = false;
   const point = state.manualPoints.splice(index, 1)[0];
-  const undo = {point, index, time: Date.now()};
+  const undo = {point, index, wasLockedDestination, time: Date.now()};
   state.manualUndo = undo;
   updateManualTrack();
   toastWithAction('Point de passage supprimé.', 'Annuler', () => {
     if (state.manualUndo !== undo) return;
-    state.manualPoints.splice(Math.min(index, state.manualPoints.length), 0, point);
+    const restoreIndex = Math.min(index, state.manualPoints.length);
+    state.manualPoints.splice(restoreIndex, 0, point);
+    state.manualDestinationLocked = Boolean(wasLockedDestination && restoreIndex === state.manualPoints.length - 1);
     state.manualUndo = null;
     updateManualTrack();
     toast('Suppression annulée.');
@@ -721,13 +733,17 @@ function removeManualWaypoint(index) {
 
 function addManualWaypoint(point) {
   if (!state.manualMode || !state.manualPoints.length) return;
-  const previous = state.manualPoints.at(-1);
-  if (state.map.distance([previous.lat, previous.lon], [point.lat, point.lon]) < 3) {
-    toast('Ce point est trop proche de l’étape précédente.'); return;
+  const insertionIndex = state.manualDestinationLocked && state.manualPoints.length > 1
+    ? state.manualPoints.length - 1 : state.manualPoints.length;
+  const previous = state.manualPoints[insertionIndex - 1];
+  const next = state.manualPoints[insertionIndex];
+  if (state.map.distance([previous.lat, previous.lon], [point.lat, point.lon]) < 3
+    || (next && state.map.distance([next.lat, next.lon], [point.lat, point.lon]) < 3)) {
+    toast('Ce point est trop proche d’une étape existante.'); return;
   }
-  state.manualPoints.push({lat: point.lat, lon: point.lon});
+  state.manualPoints.splice(insertionIndex, 0, {lat: point.lat, lon: point.lon});
   updateManualTrack();
-  toast(`Étape ${manualStepName(state.manualPoints.length - 2)} ajoutée. Calcul du chemin en cours.`);
+  toast(`Étape ${manualStepName(insertionIndex - 1)} ajoutée. Calcul du chemin en cours.`);
 }
 
 async function calculateRoute(fromOverride = null, toOverride = null) {
@@ -793,7 +809,7 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
     state.currentStep = 0;
     state.lastSpokenStep = -1;
     state.routeStartDistanceTravelled = state.distanceTravelledMeters;
-    state.manualPoints = []; state.manualLegs = []; state.manualReturnToStart = false;
+    state.manualPoints = []; state.manualLegs = []; state.manualReturnToStart = false; state.manualDestinationLocked = false;
     updateManualModeUI();
     drawRoute(); showRoute();
     $('#route-result').classList.remove('manual-result');
@@ -933,9 +949,31 @@ function renderNavigationPoints() {
     state.navigationPointLayers.push(ring, L.marker([point.lat, point.lon], {icon, interactive: false, keyboard: false, zIndexOffset: 1200}));
   });
   state.navigationViaPoints.forEach((item, index) => {
-    const icon = L.divIcon({className: 'nav-point-shell', html: '<span class="nav-point-marker nav-point-via">V</span>', iconSize: [30, 30], iconAnchor: [15, 15]});
+    const letter = manualStepName(index);
+    const icon = L.divIcon({className: 'nav-point-shell', html: `<span class="nav-point-marker nav-point-via">${letter}</span>`, iconSize: [30, 30], iconAnchor: [15, 15]});
     state.navigationPointLayers.push(L.marker([item.lat, item.lon], {icon, interactive: false, keyboard: false, zIndexOffset: 1100}));
   });
+  if (state.navigationDetour) {
+    const draft = state.navigationDetour;
+    const coords = [[draft.start.lat, draft.start.lon], ...draft.points.map(item => [item.lat, item.lon])];
+    if (coords.length > 1) state.navigationPointLayers.push(L.polyline(coords, {color: '#fff', weight: 5, opacity: .92, dashArray: '6 7', interactive: false}));
+    draft.points.forEach((item, index) => {
+      const letter = manualStepName(draft.startViaIndex + index + 1);
+      const icon = L.divIcon({className: 'nav-point-shell', html: `<span class="nav-point-marker nav-point-draft">${letter}</span>`, iconSize: [30, 30], iconAnchor: [15, 15]});
+      state.navigationPointLayers.push(L.marker([item.lat, item.lon], {icon, interactive: false, keyboard: false, zIndexOffset: 1250}));
+    });
+  }
+  const detourStatus = $('#nav-detour-status');
+  if (detourStatus) {
+    detourStatus.classList.toggle('hidden', !state.navigationDetour);
+    if (state.navigationDetour) {
+      const draft = state.navigationDetour;
+      const startName = draft.startViaIndex >= 0 ? manualStepName(draft.startViaIndex) : 'Départ';
+      $('#nav-detour-copy').textContent = draft.calculating
+        ? 'Calcul du détour en cours…'
+        : `Détour depuis ${startName} · ajoutez des points puis touchez une lettre plus loin pour le fermer.`;
+    }
+  }
   state.navigationPointLayers.forEach(layer => layer.addTo(state.map));
 }
 
@@ -1035,6 +1073,109 @@ async function insertNavigationVia(point) {
   }
 }
 
+function nearestNavigationViaIndex(point) {
+  let bestIndex = -1, bestDistance = Infinity;
+  state.navigationViaPoints.forEach((item, index) => {
+    const distance = state.map.distance([item.lat, item.lon], [point.lat, point.lon]);
+    if (distance < bestDistance) { bestDistance = distance; bestIndex = index; }
+  });
+  return bestIndex;
+}
+
+function startNavigationDetour(point) {
+  if (state.navigationDetour) return;
+  const startViaIndex = nearestNavigationViaIndex(point);
+  const start = startViaIndex >= 0
+    ? {lat: state.navigationViaPoints[startViaIndex].lat, lon: state.navigationViaPoints[startViaIndex].lon}
+    : {...(state.lastPosition || state.origin)};
+  state.navigationDetour = {startViaIndex, start, points: [{lat: point.lat, lon: point.lon}], calculating: false};
+  renderNavigationPoints();
+  persistNavigationResume(true);
+  const startName = startViaIndex >= 0 ? manualStepName(startViaIndex) : 'Départ';
+  toast(`Détour commencé depuis ${startName}. Ajoutez des points puis touchez une lettre plus loin pour le fermer.`);
+}
+
+function addNavigationDetourPoint(point) {
+  const draft = state.navigationDetour;
+  if (!draft || draft.calculating) return;
+  const previous = draft.points.at(-1) || draft.start;
+  if (state.map.distance([previous.lat, previous.lon], [point.lat, point.lon]) < 5) {
+    toast('Ce point est trop proche du précédent.'); return;
+  }
+  draft.points.push({lat: point.lat, lon: point.lon});
+  renderNavigationPoints();
+  persistNavigationResume(true);
+  toast(`Point de détour ${draft.points.length} ajouté. Touchez une lettre plus loin pour fermer le détour.`);
+}
+
+function cancelNavigationDetour() {
+  if (!state.navigationDetour) return;
+  state.navigationRerouteController?.abort();
+  state.navigationDetour = null;
+  renderNavigationPoints();
+  persistNavigationResume(true);
+  toast('Détour annulé.');
+}
+
+async function finishNavigationDetour(endViaIndex) {
+  const draft = state.navigationDetour;
+  if (!draft || draft.calculating) return;
+  const startViaIndex = draft.startViaIndex;
+  if (endViaIndex <= startViaIndex) {
+    toast('Fermez le détour sur une lettre située après son point de départ.'); return;
+  }
+  const end = endViaIndex < state.navigationViaPoints.length
+    ? state.navigationViaPoints[endViaIndex] : state.destination;
+  if (!end) return;
+  const oldVias = state.navigationViaPoints.map(item => ({...item}));
+  const oldSegments = [...state.navigationSegments];
+  const center = state.map.getCenter(), zoom = state.map.getZoom();
+  state.navigationRerouteController?.abort();
+  const controller = new AbortController();
+  state.navigationRerouteController = controller;
+  const version = ++state.navigationRerouteVersion;
+  draft.calculating = true;
+  renderNavigationPoints();
+  try {
+    const targets = [...draft.points, {lat: end.lat, lon: end.lon}];
+    const replacementSegments = [];
+    let cursor = draft.start;
+    for (const target of targets) {
+      const segment = await requestNavigationSegment(cursor, target, controller.signal);
+      if (controller.signal.aborted || version !== state.navigationRerouteVersion) return;
+      replacementSegments.push(segment);
+      cursor = target;
+    }
+    state.navigationViaPoints = [
+      ...oldVias.slice(0, startViaIndex + 1),
+      ...draft.points.map(item => ({...item, progress: 0})),
+      ...oldVias.slice(endViaIndex)
+    ];
+    state.navigationSegments = [
+      ...oldSegments.slice(0, startViaIndex + 1),
+      ...replacementSegments,
+      ...oldSegments.slice(endViaIndex + 1)
+    ];
+    refreshViaProgressFromSegments();
+    state.navigationDetour = null;
+    state.route = combineNavigationSegments(state.navigationSegments);
+    state.currentStep = 0;
+    state.routeStartDistanceTravelled = state.distanceTravelledMeters;
+    drawRoute();
+    state.map.setView(center, zoom, {animate: false});
+    renderNavigationPoints();
+    persistNavigationResume(true);
+    toast(`Détour fermé sur ${endViaIndex < oldVias.length ? manualStepName(endViaIndex) : 'l’arrivée'}.`);
+  } catch (error) {
+    if (controller.signal.aborted || version !== state.navigationRerouteVersion) return;
+    state.navigationViaPoints = oldVias;
+    state.navigationSegments = oldSegments;
+    if (state.navigationDetour) state.navigationDetour.calculating = false;
+    renderNavigationPoints();
+    toast('Détour impossible : ' + error.message);
+  }
+}
+
 function handleNavigationMapClick(point) {
   if (!state.route || !state.map) return;
   state.map.closePopup();
@@ -1043,6 +1184,22 @@ function handleNavigationMapClick(point) {
     state.navigationAvoids.splice(nearbyAvoid, 1);
     syncNavigationRouteEdits();
     recalculateNavigationRoute('Passage interdit supprimé.');
+    return;
+  }
+  if (state.navigationDetour) {
+    if (state.navigationDetour.calculating) return;
+    const nearbyViaIndex = state.navigationViaPoints.findIndex(item => state.map.distance([item.lat, item.lon], [point.lat, point.lon]) < 38);
+    if (nearbyViaIndex >= 0) {
+      if (nearbyViaIndex > state.navigationDetour.startViaIndex) finishNavigationDetour(nearbyViaIndex);
+      else toast('Touchez une lettre située plus loin pour fermer le détour.');
+      return;
+    }
+    const nearDestination = state.destination && state.map.distance([state.destination.lat, state.destination.lon], [point.lat, point.lon]) < 38;
+    if (nearDestination && state.navigationViaPoints.length > state.navigationDetour.startViaIndex) {
+      finishNavigationDetour(state.navigationViaPoints.length);
+      return;
+    }
+    addNavigationDetourPoint(point);
     return;
   }
   const nearbyVia = state.navigationViaPoints.findIndex(item => state.map.distance([item.lat, item.lon], [point.lat, point.lon]) < 45);
@@ -1056,7 +1213,7 @@ function handleNavigationMapClick(point) {
   const onRoute = routePoints.some(item => state.map.distance(item, [point.lat, point.lon]) < 65);
   const popup = L.popup({closeButton: true, className: 'nav-map-actions', offset: [0, -8]})
     .setLatLng([point.lat, point.lon])
-    .setContent(`<div class="nav-map-action-card"><strong>${onRoute ? 'Modifier le parcours' : 'Ajouter une étape'}</strong>${onRoute ? '<button type="button" data-nav-action="avoid">Interdire ce passage</button>' : ''}<button type="button" data-nav-action="via">Ajouter comme étape</button></div>`)
+    .setContent(`<div class="nav-map-action-card"><strong>${onRoute ? 'Créer un détour' : 'Préparer un détour'}</strong>${onRoute ? '<button type="button" data-nav-action="avoid">Interdire ce passage</button>' : ''}<button type="button" data-nav-action="detour">Commencer depuis ${nearestNavigationViaIndex(point) >= 0 ? 'la lettre ' + manualStepName(nearestNavigationViaIndex(point)) : 'le départ'}</button></div>`)
     .openOn(state.map);
   document.body.classList.add('nav-action-open');
   state.map.once('popupclose', () => document.body.classList.remove('nav-action-open'));
@@ -1068,8 +1225,8 @@ function handleNavigationMapClick(point) {
         state.navigationAvoids.push({lat: point.lat, lon: point.lon});
         syncNavigationRouteEdits();
         recalculateNavigationRoute('Passage interdit ajouté. Recherche d’un détour.');
-      } else if (action === 'via') {
-        insertNavigationVia(point);
+      } else if (action === 'detour') {
+        startNavigationDetour(point);
       }
       state.map.closePopup();
     }));
@@ -1265,6 +1422,8 @@ async function resumeNavigationFromSnapshot() {
   $('#destination-input').value = snapshot.destinationLabel || 'Arrivée enregistrée';
   state.manualMode = false;
   state.manualReturnToStart = Boolean(snapshot.manualReturnToStart);
+  state.manualDestinationLocked = Boolean(snapshot.manualDestinationLocked);
+  state.navigationDetour = snapshot.navigationDetour || null;
   state.manualPoints = Array.isArray(snapshot.manualPoints) ? snapshot.manualPoints : [];
   state.manualLegs = Array.isArray(snapshot.manualLegs) ? snapshot.manualLegs : [];
   state.route = snapshot.route;
@@ -1306,6 +1465,7 @@ async function startNavigation(resuming = false) {
   if (!navigator.geolocation) { toast('La géolocalisation n’est pas disponible sur cet appareil.'); return; }
   if (state.manualMode) finishManualMode();
   if (!resuming) {
+    state.navigationDetour = null;
     localStorage.removeItem('ct_navigation_resume');
     state.navigationResumeSnapshot = null;
     state.lastResumeSaveAt = 0;
@@ -1381,6 +1541,7 @@ function loadSavedRoute(index) {
     state.origin = route.origin; state.destination = route.destination;
     state.manualPoints = route.manualPoints.map(point => ({lat: Number(point.lat), lon: Number(point.lon)}));
     state.manualReturnToStart = Boolean(route.manualReturnToStart);
+    state.manualDestinationLocked = Boolean(route.manualDestinationLocked);
     $('#origin-input').value = route.originLabel || 'Point enregistré';
     closeModal('saved-modal');
     clearDisplayedRoute();
@@ -1393,6 +1554,7 @@ function loadSavedRoute(index) {
   clearDisplayedRoute();
   state.manualPoints = [];
   state.manualReturnToStart = false;
+  state.manualDestinationLocked = false;
   if (route.mode === 'family' && typeof route.familyFast === 'boolean') {
     state.familyFast = route.familyFast; localStorage.setItem('ct_family_fast', String(state.familyFast)); setMode('family');
   }
@@ -1425,7 +1587,7 @@ function saveSaved() { localStorage.setItem('ct_saved_routes', JSON.stringify(st
 
 function saveRoute() {
   if (!state.route) { toast('Aucun parcours à enregistrer.'); return; }
-  state.saved.unshift({title: routeLabel(), distance: state.route.distanceMeters, savedAt: new Date().toISOString(), mode: state.mode, familyFast: state.mode === 'family' ? state.familyFast : undefined, manualPoints: state.route.manual ? state.manualPoints.map(point => ({lat: point.lat, lon: point.lon})) : undefined, manualReturnToStart: state.route.manual ? state.manualReturnToStart : undefined, origin: state.origin, destination: state.destination, originLabel: $('#origin-input').value, destinationLabel: $('#destination-input').value});
+  state.saved.unshift({title: routeLabel(), distance: state.route.distanceMeters, savedAt: new Date().toISOString(), mode: state.mode, familyFast: state.mode === 'family' ? state.familyFast : undefined, manualPoints: state.route.manual ? state.manualPoints.map(point => ({lat: point.lat, lon: point.lon})) : undefined, manualReturnToStart: state.route.manual ? state.manualReturnToStart : undefined, manualDestinationLocked: state.route.manual ? state.manualDestinationLocked : undefined, origin: state.origin, destination: state.destination, originLabel: $('#origin-input').value, destinationLabel: $('#destination-input').value});
   state.saved = state.saved.slice(0, 20); saveSaved(); toast('Parcours enregistré sur cet appareil.');
 }
 
@@ -1531,6 +1693,7 @@ $('#start-navigation').addEventListener('click', () => startNavigation(false));
 $('#resume-navigation').addEventListener('click', resumeNavigationFromSnapshot);
 $('#forget-resume').addEventListener('click', forgetNavigationResume);
 $('#stop-navigation').addEventListener('click', stopNavigation);
+$('#nav-detour-cancel').addEventListener('click', cancelNavigationDetour);
 $('#voice-toggle').addEventListener('click', toggleVoice);
 $('#save-route').addEventListener('click', saveRoute);
 $('#saved-open').addEventListener('click', () => openModal('saved-modal'));
