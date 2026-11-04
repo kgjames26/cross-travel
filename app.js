@@ -6,12 +6,12 @@ const state = {
   origin: null, destination: null, currentStep: 0, watchId: null, wakeLock: null,
   lastPosition: null, navigationMarker: null, rerouting: false, lastRerouteAt: 0,
   lastGeocodeAt: 0, routeServer: localStorage.getItem('ct_route_server') || DEFAULT_ROUTER,
-  mode: localStorage.getItem('ct_mode') || 'vtt', mapPickTarget: null, manualMode: false, manualPoints: [], manualMarkers: [], manualLine: null,
+  mode: localStorage.getItem('ct_mode') || 'vtt', mapPickTarget: null, manualMode: false, manualPoints: [], manualLegs: [], manualMarkers: [], manualLine: null, manualController: null, manualRoutingVersion: 0,
   seekIntense: localStorage.getItem('ct_seek_intense') === 'true',
   familyFast: localStorage.getItem('ct_family_fast') === 'true',
   voiceEnabled: localStorage.getItem('ct_voice_enabled') !== 'false', lastSpokenStep: -1,
   distanceTravelledMeters: 0, movingDistanceMeters: 0, movingSeconds: 0,
-  currentSpeedKmh: 0, previousGpsSample: null, routeStartDistanceTravelled: 0, lastHeading: null, lastMapBearing: 0, navigationHeading: null, lastNavigationZoomAt: 0,
+  currentSpeedKmh: 0, previousGpsSample: null, routeStartDistanceTravelled: 0, lastHeading: null, lastMapBearing: 0, navigationHeading: null, lastNavigationZoomAt: 0, navigationFollow: true, programmaticNavigationZoom: false,
   searchTimers: {}, searchControllers: {}, suggestions: {origin: [], destination: []},
   saved: JSON.parse(localStorage.getItem('ct_saved_routes') || '[]')
 };
@@ -98,7 +98,7 @@ function updateMapBearing(position) {
     heading = (Math.atan2(y, x) / radians + 360) % 360;
   }
   if (heading !== null) state.navigationHeading = heading;
-  if (heading === null || state.currentSpeedKmh < 1.5 || typeof state.map?.setBearing !== 'function') return;
+  if (heading === null || state.currentSpeedKmh < 1.5 || !state.navigationFollow || typeof state.map?.setBearing !== 'function') return;
   const difference = ((heading - state.lastMapBearing + 540) % 360) - 180;
   if (Math.abs(difference) < 4) return;
   state.lastMapBearing = (state.lastMapBearing + difference * 0.35 + 360) % 360;
@@ -108,9 +108,13 @@ function initializeMap() {
   if (state.map) { state.map.invalidateSize(); return true; }
   if (!window.L) { toast('La bibliothèque de carte n’a pas pu se charger. Réessayez avec une connexion active.'); return false; }
   $('.map-panel').classList.add('map-ready');
-  state.map = L.map('map', { zoomControl: false, attributionControl: true, preferCanvas: true, rotate: true, bearing: 0, touchRotate: false, zoomSnap: 0.25 })
+  state.map = L.map('map', { zoomControl: false, attributionControl: true, preferCanvas: true, rotate: true, bearing: 0, touchRotate: false, zoomSnap: 0.25, dragging: true, touchZoom: true, doubleClickZoom: true })
     .setView([50.337, 4.52], 12);
   L.control.zoom({ position: 'bottomright' }).addTo(state.map);
+  state.map.on('dragstart', () => setNavigationFollow(false));
+  state.map.on('zoomstart', () => {
+    if (document.body.classList.contains('nav-active') && !state.programmaticNavigationZoom) setNavigationFollow(false);
+  });
   state.streetLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 20,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>'
@@ -340,6 +344,8 @@ async function requestBRouter(origin, destination) {
 
 
 
+
+
 function manualStepName(index) {
   let value = index + 1, label = '';
   while (value > 0) {
@@ -351,15 +357,16 @@ function manualStepName(index) {
 }
 
 function clearManualLayers() {
-  if (!state.map) { state.manualMarkers = []; state.manualLine = null; return; }
-  if (state.manualLine && state.map.hasLayer(state.manualLine)) state.map.removeLayer(state.manualLine);
-  state.manualMarkers.forEach(marker => { if (state.map.hasLayer(marker)) state.map.removeLayer(marker); });
+  if (state.map && state.manualLine && state.map.hasLayer(state.manualLine)) state.map.removeLayer(state.manualLine);
+  state.manualMarkers.forEach(marker => { if (state.map?.hasLayer(marker)) state.map.removeLayer(marker); });
   state.manualMarkers = [];
-  if (state.routeLayer === state.manualLine) state.routeLayer = null;
   state.manualLine = null;
 }
 
 function clearDisplayedRoute() {
+  if (state.manualController) state.manualController.abort();
+  state.manualController = null;
+  state.manualRoutingVersion++;
   if (state.map && state.routeLayer && state.map.hasLayer(state.routeLayer)) state.map.removeLayer(state.routeLayer);
   state.routeLayer = null;
   state.stepLayers.forEach(layer => { if (state.map?.hasLayer(layer)) state.map.removeLayer(layer); });
@@ -374,85 +381,126 @@ function clearDisplayedRoute() {
 
 function updateManualModeUI() {
   const toggle = $('#manual-mode-toggle');
-  toggle.textContent = state.manualMode ? 'Terminer le tracé manuel' : state.route?.manual ? 'Reprendre le tracé manuel' : 'Tracer manuellement sur la carte';
+  toggle.textContent = state.manualMode ? 'Terminer le tracé manuel' : (state.manualPoints.length > 1 ? 'Reprendre le tracé manuel' : 'Tracer manuellement sur la carte');
   toggle.setAttribute('aria-pressed', String(state.manualMode));
   toggle.classList.toggle('is-active', state.manualMode);
   $('#origin-input').readOnly = state.manualMode;
   $('#destination-input').readOnly = state.manualMode;
   $('#use-location').disabled = state.manualMode;
   document.querySelectorAll('[data-pick]').forEach(button => { button.disabled = state.manualMode; });
+  document.querySelectorAll('.mode-button').forEach(button => { button.disabled = state.manualMode; });
   $('#route-button').classList.toggle('hidden', state.manualMode);
-  $('#api-note').classList.toggle('hidden', state.manualMode || Boolean(state.route?.manual));
+  $('#api-note').classList.toggle('hidden', state.manualMode || state.manualPoints.length > 1);
   $('#manual-map-hint').classList.toggle('hidden', !state.manualMode);
-  const showPanel = state.manualMode || Boolean(state.route?.manual);
-  $('#manual-route-panel').classList.toggle('hidden', !showPanel);
+  $('#manual-route-panel').classList.toggle('hidden', !(state.manualMode || state.manualPoints.length > 1));
   if (state.manualMode) {
-    $('#manual-route-note').textContent = 'Touchez la carte pour ajouter les étapes suivantes. Chaque segment relie directement deux points.';
+    $('#manual-route-note').textContent = state.manualLegs.some(leg => leg.status === 'pending')
+      ? 'Calcul des chemins entre les étapes en cours…'
+      : 'Touchez la carte pour ajouter des étapes. Chaque tronçon suit le réseau de chemins disponible.';
     $('#manual-map-hint-text').textContent = `Touchez la carte pour ajouter l’étape ${manualStepName(Math.max(0, state.manualPoints.length - 1))}.`;
-  } else if (state.route?.manual) {
-    $('#manual-route-note').textContent = 'Tracé en pause. Reprenez-le pour ajouter des étapes ou supprimez un point dans la liste.';
-    $('#manual-map-hint-text').textContent = 'Tracé manuel en pause.';
+  } else if (state.manualPoints.length > 1) {
+    $('#manual-route-note').textContent = state.manualLegs.some(leg => leg.status === 'error')
+      ? 'Un tronçon n’a pas pu être calculé. Reprenez le tracé pour réessayer ou déplacez le point concerné.'
+      : 'Tracé en pause. Reprenez-le pour ajouter des étapes ou supprimez un point dans la liste.';
   }
 }
 
-function updateManualTrack() {
+async function requestManualSegment(origin, destination, signal) {
+  if (state.mode === 'moto') {
+    const routeRequest = {
+      locations: [{lat: origin.lat, lon: origin.lon, type: 'break'}, {lat: destination.lat, lon: destination.lon, type: 'break'}],
+      costing: 'motorcycle',
+      costing_options: {motorcycle: {use_highways: 0, use_trails: 1, use_tracks: 1, use_distance: 0.9, top_speed: 30, speed_penalty_factor: 0.5, use_tolls: 0, use_living_streets: 0}},
+      directions_options: {units: 'kilometers', language: 'fr-FR'},
+      shape_format: 'geojson'
+    };
+    const response = await fetch(state.routeServer, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-Client-Id': 'cross-travel (github.com/kgjames26/cross-travel)'},
+      body: JSON.stringify(routeRequest), signal
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || payload.status_message || `Valhalla indisponible (${response.status}).`);
+    return normalizeValhalla(payload);
+  }
+  const params = new URLSearchParams({
+    lonlats: `${origin.lon},${origin.lat}|${destination.lon},${destination.lat}`,
+    profile: 'mtb', alternativeidx: '0', format: 'geojson'
+  });
+  params.set('profile:avoid_unsafe', '1');
+  const response = await fetch(`${BROUTER_URL}?${params}`, {signal, headers: {'Accept': 'application/geo+json'}});
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || `BRouter indisponible (${response.status}).`);
+  return normalizeBRouter(payload);
+}
+
+function renderManualTrack() {
   if (!state.map || !state.manualPoints.length) return;
   clearManualLayers();
   const points = state.manualPoints;
-  const path = points.map(point => [point.lat, point.lon]);
   const themeRoute = getComputedStyle(document.body).getPropertyValue('--mode-strong').trim() || '#24382b';
-  if (path.length > 1) {
-    state.manualLine = L.polyline(path, {color: themeRoute, weight: 5, opacity: .96, lineCap: 'round', lineJoin: 'round'}).addTo(state.map);
-    state.routeLayer = state.manualLine;
+  const readyLegs = state.manualLegs.filter(leg => leg.status === 'ready' && leg.path?.length > 1);
+  if (readyLegs.length) {
+    const lines = readyLegs.map(leg => L.polyline(leg.path, {color: themeRoute, weight: 5, opacity: .96, lineCap: 'round', lineJoin: 'round'}));
+    state.manualLine = L.featureGroup(lines).addTo(state.map);
   }
   points.forEach((point, index) => {
     const label = index === 0 ? 'D' : manualStepName(index - 1);
     const startClass = index === 0 ? ' manual-marker-start' : '';
-    const icon = L.divIcon({
-      className: 'manual-marker-shell',
-      html: `<span class="manual-marker${startClass}">${label}</span>`,
-      iconSize: [34, 34], iconAnchor: [17, 17]
-    });
+    const icon = L.divIcon({className: 'manual-marker-shell', html: `<span class="manual-marker${startClass}">${label}</span>`, iconSize: [34, 34], iconAnchor: [17, 17]});
     state.manualMarkers.push(L.marker([point.lat, point.lon], {icon, interactive: false, keyboard: false, zIndexOffset: 900}).addTo(state.map));
   });
-  let total = 0;
-  const cumulative = [0], segmentDistances = [];
-  for (let i = 1; i < points.length; i++) {
-    const segment = state.map.distance([points[i - 1].lat, points[i - 1].lon], [points[i].lat, points[i].lon]);
-    segmentDistances.push(segment);
-    total += segment;
-    cumulative.push(total);
-  }
-  $('#manual-total-distance').textContent = formatDistance(total);
+
+  let total = 0, cumulativeKnown = 0, complete = state.manualLegs.length === points.length - 1;
+  const cumulative = [0];
+  state.manualLegs.forEach(leg => {
+    if (leg.status === 'ready') { total += leg.distanceMeters; cumulativeKnown += leg.distanceMeters; }
+    else complete = false;
+    cumulative.push(leg.status === 'ready' && cumulative.at(-1) !== null ? cumulativeKnown : null);
+  });
+  $('#manual-total-distance').textContent = points.length === 1 ? formatDistance(0) : complete ? formatDistance(total) : state.manualLegs.some(leg => leg.status === 'error') ? 'Incomplet' : 'Calcul…';
+
   const startLabel = $('#origin-input').value.trim() || `${points[0].lat.toFixed(5)}, ${points[0].lon.toFixed(5)}`;
   const rows = [`<li class="manual-stage-row"><span class="manual-stage-badge manual-stage-start">D</span><div class="manual-stage-copy"><strong>Départ</strong><span>${escapeHtml(startLabel)}</span><small>Cumul : 0,00 km</small></div></li>`];
   for (let i = 1; i < points.length; i++) {
-    const label = manualStepName(i - 1);
-    rows.push(`<li class="manual-stage-row"><span class="manual-stage-badge">${label}</span><div class="manual-stage-copy"><strong>Étape ${label}</strong><span>${points[i].lat.toFixed(5)}, ${points[i].lon.toFixed(5)}</span><small>Cumul : ${formatDistance(cumulative[i])}</small></div><button class="manual-remove-step" type="button" data-manual-remove="${i}" aria-label="Supprimer l’étape ${label}">×</button></li>`);
+    const label = manualStepName(i - 1), leg = state.manualLegs[i - 1];
+    let details = 'En attente du calcul du chemin…', cumulativeLabel = 'Cumul : —';
+    if (leg?.status === 'ready') {
+      details = `Tronçon : ${formatDistance(leg.distanceMeters)}`;
+      cumulativeLabel = cumulative[i] === null ? 'Cumul incomplet' : `Cumul : ${formatDistance(cumulative[i])}`;
+    } else if (leg?.status === 'error') details = 'Chemin introuvable. Déplacez ce point.';
+    rows.push(`<li class="manual-stage-row"><span class="manual-stage-badge">${label}</span><div class="manual-stage-copy"><strong>Étape ${label}</strong><span>${points[i].lat.toFixed(5)}, ${points[i].lon.toFixed(5)} · ${details}</span><small>${cumulativeLabel}</small></div><button class="manual-remove-step" type="button" data-manual-remove="${i}" aria-label="Supprimer l’étape ${label}">×</button></li>`);
   }
   $('#manual-stage-list').innerHTML = rows.join('');
   $('#manual-stage-list').querySelectorAll('[data-manual-remove]').forEach(button => button.addEventListener('click', () => {
     state.manualPoints.splice(Number(button.dataset.manualRemove), 1);
     updateManualTrack();
   }));
+
   if (points.length > 1) {
     state.destination = points.at(-1);
-    const lastLabel = manualStepName(points.length - 2);
-    $('#destination-input').value = `Étape ${lastLabel}`;
+    $('#destination-input').value = `Étape ${manualStepName(points.length - 2)}`;
+  } else {
+    state.destination = null;
+    $('#destination-input').value = '';
+  }
+
+  if (complete && points.length > 1 && state.manualLegs.every(leg => leg.status === 'ready')) {
+    const path = [];
+    state.manualLegs.forEach((leg, index) => path.push(...(index ? leg.path.slice(1) : leg.path)));
     const speedKmh = state.mode === 'road' ? 22 : state.mode === 'moto' ? 20 : state.mode === 'family' ? state.familyFast ? 16 : 12 : 10;
-    const steps = points.slice(1).map((point, index) => ({
-      instructions: `Rejoindre l’étape ${manualStepName(index)}`,
-      distanceMeters: segmentDistances[index],
-      endLocation: {lat: point.lat, lon: point.lon},
-      path: [path[index], path[index + 1]]
+    const steps = state.manualLegs.map((leg, index) => ({
+      instructions: `Suivez le chemin jusqu’à l’étape ${manualStepName(index)}`,
+      distanceMeters: leg.distanceMeters,
+      endLocation: {lat: points[index + 1].lat, lon: points[index + 1].lon},
+      path: leg.path
     }));
     state.route = {manual: true, path, distanceMeters: total, durationSeconds: total / (speedKmh / 3.6), legs: [{steps}]};
     state.currentStep = Math.min(state.currentStep, steps.length - 1);
     state.routeStartDistanceTravelled = state.distanceTravelledMeters;
     $('#route-title').textContent = 'Tracé manuel';
-    $('#route-alert-text').textContent = 'Segments directs entre les points : la carte ne vérifie ni le terrain, ni les chemins, ni les droits d’accès.';
-    $('#route-result').classList.remove('hidden');
-    $('#route-result').classList.add('manual-result');
+    $('#route-alert-text').textContent = 'Tronçons calculés sur les chemins cartographiés. Vérifiez les accès et la signalisation sur place.';
+    $('#route-result').classList.remove('hidden'); $('#route-result').classList.add('manual-result');
     $('#route-distance').textContent = formatDistance(total);
     $('#route-duration').textContent = formatDuration(state.route.durationSeconds);
     $('#route-steps-count').textContent = String(steps.length);
@@ -460,17 +508,36 @@ function updateManualTrack() {
     $('#export-manual-gpx').disabled = false;
     $('#map-mode-label').textContent = 'TRACÉ MANUEL · ' + (state.mode === 'family' ? 'VÉLO FAMILIAL' : state.mode === 'road' ? 'VÉLO DE ROUTE' : state.mode === 'moto' ? 'MOTOCROSS' : 'VTT');
   } else {
-    state.destination = null;
-    $('#destination-input').value = '';
     state.route = null;
     state.currentStep = 0;
-    state.routeLayer = state.manualLine;
-    $('#route-result').classList.add('hidden');
-    $('#route-result').classList.remove('manual-result');
+    $('#route-result').classList.add('hidden'); $('#route-result').classList.remove('manual-result');
     $('#export-manual-gpx').disabled = true;
-    $('#api-note').classList.toggle('hidden', state.manualMode);
   }
   updateManualModeUI();
+}
+
+async function recalculateManualLegs(generation, controller) {
+  for (let i = 0; i < state.manualPoints.length - 1; i++) {
+    try {
+      const route = await requestManualSegment(state.manualPoints[i], state.manualPoints[i + 1], controller.signal);
+      if (controller.signal.aborted || generation !== state.manualRoutingVersion) return;
+      state.manualLegs[i] = {status: 'ready', path: route.path, distanceMeters: route.distanceMeters, durationSeconds: route.durationSeconds};
+    } catch (error) {
+      if (controller.signal.aborted || generation !== state.manualRoutingVersion) return;
+      state.manualLegs[i] = {status: 'error', error: error.message};
+    }
+    renderManualTrack();
+  }
+}
+
+function updateManualTrack() {
+  if (!state.map || !state.manualPoints.length) return;
+  if (state.manualController) state.manualController.abort();
+  const generation = ++state.manualRoutingVersion;
+  state.manualController = new AbortController();
+  state.manualLegs = state.manualPoints.slice(1).map(() => ({status: 'pending', path: [], distanceMeters: 0, durationSeconds: 0}));
+  renderManualTrack();
+  if (state.manualLegs.length) recalculateManualLegs(generation, state.manualController);
 }
 
 async function toggleManualMode() {
@@ -480,20 +547,19 @@ async function toggleManualMode() {
   try {
     const origin = await resolvePoint($('#origin-input'), state.origin);
     state.origin = origin;
-    const resumeTrack = Boolean(state.route?.manual && state.manualPoints.length && state.manualPoints[0].lat === origin.lat && state.manualPoints[0].lon === origin.lon);
+    const resumeTrack = Boolean(state.manualPoints.length > 1 && state.manualLegs.length === state.manualPoints.length - 1);
     if (!resumeTrack) {
-      clearDisplayedRoute();
-      state.destination = null;
-      $('#destination-input').value = '';
-      state.manualPoints = [origin];
-      state.currentStep = 0;
+      clearDisplayedRoute(); state.destination = null;
+      $('#destination-input').value = ''; state.manualPoints = [origin]; state.manualLegs = []; state.currentStep = 0;
+    } else if (state.manualPoints[0].lat !== origin.lat || state.manualPoints[0].lon !== origin.lon) {
+      state.manualPoints = [origin]; state.manualLegs = []; clearDisplayedRoute();
     }
-    state.mapPickTarget = null;
-    $('#map-pick-hint').classList.add('hidden');
+    state.mapPickTarget = null; $('#map-pick-hint').classList.add('hidden');
     state.manualMode = true;
     state.map.setView([origin.lat, origin.lon], Math.max(16, state.map.getZoom()));
     $('#api-note').classList.add('hidden');
-    updateManualTrack();
+    if (resumeTrack && state.manualLegs.every(leg => leg.status === 'ready')) renderManualTrack();
+    else updateManualTrack();
     updateManualModeUI();
     if (window.matchMedia('(max-width: 680px)').matches) $('#map').scrollIntoView({behavior: 'smooth', block: 'center'});
   } catch (error) {
@@ -507,16 +573,17 @@ function finishManualMode() {
 }
 
 function resetManualTrack() {
+  if (state.manualController) state.manualController.abort();
   clearDisplayedRoute();
-  state.destination = null;
-  $('#destination-input').value = '';
-  state.currentStep = 0;
+  state.destination = null; $('#destination-input').value = ''; state.currentStep = 0;
   state.manualPoints = state.origin ? [state.origin] : [];
+  state.manualLegs = [];
   if (state.manualPoints.length) updateManualTrack();
   else {
     $('#manual-stage-list').replaceChildren();
     $('#manual-total-distance').textContent = formatDistance(0);
     $('#export-manual-gpx').disabled = true;
+    updateManualModeUI();
   }
 }
 
@@ -524,16 +591,17 @@ function addManualWaypoint(point) {
   if (!state.manualMode || !state.manualPoints.length) return;
   const previous = state.manualPoints.at(-1);
   if (state.map.distance([previous.lat, previous.lon], [point.lat, point.lon]) < 3) {
-    toast('Ce point est trop proche de l’étape précédente.');
-    return;
+    toast('Ce point est trop proche de l’étape précédente.'); return;
   }
   state.manualPoints.push({lat: point.lat, lon: point.lon});
   updateManualTrack();
-  toast(`Étape ${manualStepName(state.manualPoints.length - 2)} ajoutée.`);
+  toast(`Étape ${manualStepName(state.manualPoints.length - 2)} ajoutée. Calcul du chemin en cours.`);
 }
 
 async function calculateRoute(fromOverride = null, toOverride = null) {
   if (state.manualMode) { toast('Terminez le tracé manuel avant de lancer le calcul automatique.'); return; }
+  if (state.manualController) state.manualController.abort();
+  state.manualController = null; state.manualRoutingVersion++;
   const button = $('#route-button'); button.disabled = true;
   button.querySelector('span').textContent = 'Calcul en cours…';
   try {
@@ -593,6 +661,7 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
     state.currentStep = 0;
     state.lastSpokenStep = -1;
     state.routeStartDistanceTravelled = state.distanceTravelledMeters;
+    state.manualPoints = []; state.manualLegs = [];
     drawRoute(); showRoute();
     $('#route-result').classList.remove('manual-result');
     $('#map-mode-label').textContent = state.mode === 'family' ? state.familyFast ? 'OSM · VÉLO FAMILIAL · RAPIDE' : 'OSM · RAVeL & CHEMINS' : state.mode === 'road' ? 'OSM · VÉLO DE ROUTE · RAPIDE' : state.mode === 'vtt' ? 'OSM · BROUTER · PROFIL VTT' : 'OSM · MOTO · PETITES ROUTES';
@@ -772,15 +841,19 @@ function updateNavigation(position) {
   };
   if (state.navigationMarker) state.navigationMarker.setLatLngs(arrowPoints);
   else state.navigationMarker = L.polygon(arrowPoints, arrowStyle).addTo(state.map);
-  // Ajuste léger et progressif : zoom rapproché à basse vitesse, plus large en roulant vite.
-  const targetZoom = Math.max(17.5, Math.min(18.5, 18.5 - state.currentSpeedKmh * 0.025));
-  const currentZoom = state.map.getZoom();
   const now = Date.now();
-  if (currentZoom < 17 || (now - state.lastNavigationZoomAt > 2200 && Math.abs(currentZoom - targetZoom) >= 0.25)) {
-    state.map.setZoom(targetZoom, {animate: currentZoom >= 17, duration: 0.65});
-    state.lastNavigationZoomAt = now;
+  if (state.navigationFollow) {
+    // Le zoom automatique ne reprend qu’en suivi GPS, pour laisser le contrôle tactile libre.
+    const targetZoom = Math.max(17.5, Math.min(18.5, 18.5 - state.currentSpeedKmh * 0.025));
+    const currentZoom = state.map.getZoom();
+    if (currentZoom < 17 || (now - state.lastNavigationZoomAt > 2200 && Math.abs(currentZoom - targetZoom) >= 0.25)) {
+      state.programmaticNavigationZoom = true;
+      state.map.setZoom(targetZoom, {animate: currentZoom >= 17, duration: 0.65});
+      state.programmaticNavigationZoom = false;
+      state.lastNavigationZoomAt = now;
+    }
+    state.map.panTo([point.lat, point.lon], {animate: false});
   }
-  state.map.panTo([point.lat, point.lon], {animate: false});
   const routePoints = state.routeLayer?.getLatLngs() || [];
   let nearestRouteDistance = Infinity;
   const sampleEvery = Math.max(1, Math.floor(routePoints.length / 250));
@@ -797,6 +870,9 @@ async function startNavigation() {
   if (state.manualMode) finishManualMode();
   $('#nav-panel').classList.remove('hidden');
   document.body.classList.add('nav-active');
+  state.navigationFollow = true;
+  state.map.dragging.enable(); state.map.touchZoom.enable(); state.map.doubleClickZoom.enable();
+  setNavigationFollow(true);
   $('#map-mode-label').textContent = 'NAVIGATION ' + (state.mode === 'family' ? 'VÉLO FAMILIAL' : state.mode === 'road' ? 'VÉLO DE ROUTE' : state.mode === 'moto' ? 'MOTOCROSS' : 'VTT') + ' ACTIVE';
   $('#nav-mode-pill').textContent = (state.mode === 'family' ? state.familyFast ? 'VÉLO FAMILIAL · RAPIDE' : 'VÉLO FAMILIAL · RAVeL' : state.mode === 'road' ? 'VÉLO DE ROUTE' : state.mode === 'moto' ? 'MOTOCROSS · PETITES ROUTES' : 'VTT') + ' · GPS ACTIF';
   $('#nav-rider-image').src = state.mode === 'family' ? 'assets/velo-familial.webp' : state.mode === 'road' ? 'assets/velo-route.webp' : state.mode === 'moto' ? 'assets/motocross-calme.webp' : 'assets/vtt-dynamique.webp';
@@ -892,11 +968,21 @@ function useCurrentLocation() {
   }, error => toast(`Position indisponible : ${error.message}`), {enableHighAccuracy: true, timeout: 12000});
 }
 
+function setNavigationFollow(follow) {
+  if (!document.body.classList.contains('nav-active')) return;
+  state.navigationFollow = follow;
+  const button = $('#center-map');
+  button.title = follow ? 'Suivi GPS actif · Recentrer' : 'Recentrer et reprendre le suivi GPS';
+  button.setAttribute('aria-label', button.title);
+  button.classList.toggle('follow-paused', !follow);
+}
+
 function centerMap() {
   if (!state.map) { initializeMap(); return; }
   const point = state.lastPosition || state.origin;
-  if (point) state.map.setView([point.lat, point.lon], Math.max(state.map.getZoom(), 14));
+  if (point) state.map.setView([point.lat, point.lon], Math.max(state.map.getZoom(), 14), {animate: true});
   else useCurrentLocation();
+  if (document.body.classList.contains('nav-active')) setNavigationFollow(true);
 }
 
 function setMode(mode) {
