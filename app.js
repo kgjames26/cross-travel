@@ -1265,10 +1265,9 @@ function renderNavigationPoints() {
     detourStatus.classList.toggle('hidden', !state.navigationDetour);
     if (state.navigationDetour) {
       const draft = state.navigationDetour;
-      const startName = draft.startViaIndex >= 0 ? navigationLetterName(draft.startViaIndex) : 'Départ';
       $('#nav-detour-copy').textContent = draft.calculating
         ? 'Calcul du détour en cours…'
-        : `Détour depuis ${startName} · ajoutez des points puis rejoignez une lettre ou le tracé.`;
+        : 'Détour depuis le point choisi · ajoutez des points puis rejoignez une lettre ou le tracé.';
     }
   }
   state.navigationPointLayers.forEach(layer => layer.addTo(state.map));
@@ -1382,16 +1381,28 @@ function nearestNavigationViaIndex(point) {
 
 function startNavigationDetour(point) {
   if (state.navigationDetour) return;
-  const startViaIndex = nearestNavigationViaIndex(point);
-  const start = startViaIndex >= 0
+  const projection = nearestRouteProjection(point, Math.max(0, state.navigationProgress - 0.015));
+  if (!projection || projection.distance > 100) {
+    toast('Touchez le tracé pour choisir le départ du détour.');
+    return;
+  }
+  const start = {lat: projection.lat, lon: projection.lon};
+  let startViaIndex = -1;
+  state.navigationViaPoints.forEach((item, index) => {
+    const progress = Number.isFinite(Number(item.progress)) ? Number(item.progress) : nearestPathProgress(item);
+    if (progress <= projection.progress + 0.001) startViaIndex = index;
+  });
+  const connectorStart = startViaIndex >= 0
     ? {lat: state.navigationViaPoints[startViaIndex].lat, lon: state.navigationViaPoints[startViaIndex].lon}
-    : {...(state.lastPosition || state.origin)};
-  const startProgress = startViaIndex >= 0 ? Number(state.navigationViaPoints[startViaIndex].progress) || state.navigationProgress : state.navigationProgress;
-  state.navigationDetour = {startViaIndex, startProgress, start, points: [{lat: point.lat, lon: point.lon}], calculating: false};
+    : {...(state.origin || state.route.path?.[0] || start)};
+  const startProgress = projection.progress;
+  state.navigationDetour = {
+    startViaIndex, startProgress, start, connectorStart,
+    points: [], calculating: false
+  };
   renderNavigationPoints();
   persistNavigationResume(true);
-  const startName = startViaIndex >= 0 ? navigationLetterName(startViaIndex) : 'Départ';
-  toast('Détour commencé depuis ' + startName + '. Ajoutez des points puis rejoignez une lettre ou le tracé pour le fermer.');
+  toast('Détour commencé à cet endroit du tracé. Ajoutez des points puis rejoignez le tracé.');
 }
 
 function addNavigationDetourPoint(point) {
@@ -1404,7 +1415,7 @@ function addNavigationDetourPoint(point) {
   draft.points.push({lat: point.lat, lon: point.lon});
   renderNavigationPoints();
   persistNavigationResume(true);
-  toast(`Point de détour ${draft.points.length} ajouté. Touchez une lettre plus loin pour fermer le détour.`);
+  toast(`Point de détour ${draft.points.length} ajouté. Rejoignez une lettre ou le tracé pour fermer le détour.`);
 }
 
 function cancelNavigationDetour() {
@@ -1455,6 +1466,15 @@ async function finishNavigationDetour(endViaIndex, endpointOverride = null) {
       cursor = target;
     }
     const prefixVias = oldVias.slice(0, startViaIndex + 1);
+    const prefixSegments = oldSegments.slice(0, startViaIndex + 1);
+    const connectorDistance = draft.connectorStart
+      ? state.map.distance([draft.connectorStart.lat, draft.connectorStart.lon], [draft.start.lat, draft.start.lon]) : 0;
+    if (connectorDistance > 3) {
+      const connector = await requestNavigationSegment(draft.connectorStart, draft.start, controller.signal);
+      if (controller.signal.aborted || version !== state.navigationRerouteVersion) return;
+      prefixSegments.push(connector);
+      prefixVias.push({...draft.start, progress: 0, hidden: true});
+    }
     state.navigationViaPoints = [
       ...prefixVias,
       ...draft.points.map(item => ({...item, progress: 0})),
@@ -1462,16 +1482,19 @@ async function finishNavigationDetour(endViaIndex, endpointOverride = null) {
       ...suffixVias
     ];
     state.navigationSegments = [
-      ...oldSegments.slice(0, startViaIndex + 1),
+      ...prefixSegments,
       ...replacementSegments,
       ...suffixSegments
     ];
     refreshViaProgressFromSegments();
     state.navigationDetour = null;
     state.route = combineNavigationSegments(state.navigationSegments);
-    state.currentStep = 0;
-    state.navigationProgress = 0;
-    state.routeStartDistanceTravelled = state.distanceTravelledMeters;
+    const currentPosition = state.lastPosition || draft.start;
+    state.navigationProgress = nearestPathProgress(currentPosition);
+    state.routeStartDistanceTravelled = state.distanceTravelledMeters - state.route.distanceMeters * state.navigationProgress;
+    const steps = state.route.legs[0]?.steps || [];
+    const nextStepIndex = steps.findIndex(step => nearestPathProgress(step.endLocation) >= state.navigationProgress - 0.001);
+    state.currentStep = nextStepIndex >= 0 ? nextStepIndex : Math.max(0, steps.length - 1);
     drawRoute();
     state.map.setView(center, zoom, {animate: false});
     renderNavigationPoints();
@@ -1537,10 +1560,11 @@ function handleNavigationMapClick(point) {
   }
   const projection = nearestRouteProjection(point);
   const onRoute = Boolean(projection && projection.distance < 65);
-  const nearestVia = nearestNavigationViaIndex(point);
+  const startAction = onRoute ? 'Démarrer le détour ici'
+    : projection && projection.distance <= 100 ? 'Démarrer depuis le tracé le plus proche' : 'Choisir un point près du tracé';
   const popup = L.popup({closeButton: true, className: 'nav-map-actions', offset: [0, -8]})
     .setLatLng([point.lat, point.lon])
-    .setContent('<div class="nav-map-action-card"><strong>' + (onRoute ? 'Créer un détour' : 'Préparer un détour') + '</strong>' + (onRoute ? '<button type="button" data-nav-action="avoid">Interdire ce passage</button>' : '') + '<button type="button" data-nav-action="detour">Commencer depuis ' + (nearestVia >= 0 ? 'la lettre ' + navigationLetterName(nearestVia) : 'le départ') + '</button></div>')
+    .setContent('<div class="nav-map-action-card"><strong>' + (onRoute ? 'Créer un détour' : 'Préparer un détour') + '</strong>' + (onRoute ? '<button type="button" data-nav-action="avoid">Interdire ce passage</button>' : '') + '<button type="button" data-nav-action="detour">' + startAction + '</button></div>')
     .openOn(state.map);
   document.body.classList.add('nav-action-open');
   state.map.once('popupclose', () => document.body.classList.remove('nav-action-open'));
