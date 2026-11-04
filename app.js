@@ -257,7 +257,10 @@ Object.assign(UI_TRANSLATIONS, {
   'Continuez sur le chemin': {en: 'Continue along the trail', zh: '沿小路继续前行', hi: 'पगडंडी पर आगे बढ़ें', es: 'Continúa por el camino', ar: 'تابع على المسار'},
   'Continuez jusqu’à l’arrivée': {en: 'Continue to the finish', zh: '继续前往终点', hi: 'मंज़िल तक आगे बढ़ें', es: 'Continúa hasta la llegada', ar: 'تابع حتى الوصول'},
   'Retournez au point de départ': {en: 'Return to the starting point', zh: '返回起点', hi: 'शुरुआती बिंदु पर लौटें', es: 'Vuelve al punto de partida', ar: 'عُد إلى نقطة الانطلاق'},
-  'Prenez franchement le virage': {en: 'Take the sharp turn', zh: '急转弯', hi: 'तेज़ मोड़ लें', es: 'Toma el giro cerrado', ar: 'انعطف بحدة'}
+  'Prenez franchement le virage': {en: 'Take the sharp turn', zh: '急转弯', hi: 'तेज़ मोड़ लें', es: 'Toma el giro cerrado', ar: 'انعطف بحدة'},
+  'avant la prochaine intersection': {en: 'before the next intersection', zh: '到下一个路口', hi: 'अगले चौराहे से पहले', es: 'antes de la próxima intersección', ar: 'قبل التقاطع التالي'},
+  'avant le point de passage': {en: 'before the waypoint', zh: '到途经点', hi: 'अगले पड़ाव से पहले', es: 'antes del punto de paso', ar: 'قبل نقطة المرور'},
+  'avant l’arrivée': {en: 'before arrival', zh: '到达终点前', hi: 'मंज़िल से पहले', es: 'antes de llegar', ar: 'قبل الوصول'}
 });
 const translationTextNodes = new WeakMap();
 const translationAttributes = new WeakMap();
@@ -609,6 +612,15 @@ function parseShape(shape) {
   return [];
 }
 
+function navigationDirectionFromInstruction(instruction = '') {
+  const text = String(instruction).toLowerCase();
+  if (/demi-tour|u.?turn|gira en u|media vuelta|retour|回转|掉头|यू-टर्न|استدر/.test(text)) return 'uturn';
+  if (/rond-point|roundabout|rotonda|rotatoria|kreisverkehr|环岛|गोलचक्कर|دوار/.test(text)) return 'roundabout';
+  if (/gauche|left|izquierda|izquierdo|links|左|बाएँ|बाईं|يسار/.test(text)) return 'left';
+  if (/droite|right|derecha|derecho|rechts|右|दाएँ|दाईं|يمين/.test(text)) return 'right';
+  return 'straight';
+}
+
 function normalizeValhalla(payload) {
   const trip = payload.trip;
   const leg = trip?.legs?.[0];
@@ -623,7 +635,8 @@ function normalizeValhalla(payload) {
       distanceMeters: toMeters(maneuver.length),
       endLocation: {lat: path[end][0], lon: path[end][1]},
       path: path.slice(start, end + 1),
-      maneuverType: maneuver.type
+      maneuverType: maneuver.type,
+      direction: navigationDirectionFromInstruction(maneuver.instruction || '')
     };
   });
   return {
@@ -657,6 +670,15 @@ function brouterInstruction(command, exitNumber = 0) {
   return instructions[Number(command)] || '';
 }
 
+function brouterDirection(command) {
+  const value = Number(command);
+  if ([2, 3, 4, 8].includes(value)) return 'left';
+  if ([5, 6, 7, 9].includes(value)) return 'right';
+  if ([10, 11, 15].includes(value)) return 'uturn';
+  if ([13, 14].includes(value)) return 'roundabout';
+  return 'straight';
+}
+
 function normalizeBRouter(payload) {
   const feature = payload.features?.find(item => item.geometry?.type === 'LineString');
   if (!feature) throw new Error(payload.error || 'BRouter n’a pas trouvé de parcours pour ces points.');
@@ -680,6 +702,7 @@ function normalizeBRouter(payload) {
     if (!instructions || index <= previousIndex) continue;
     steps.push({
       instructions,
+      direction: brouterDirection(hint?.[1]),
       distanceMeters: distanceAt[index] - distanceAt[previousIndex],
       endLocation: {lat: path[index][0], lon: path[index][1]},
       path: path.slice(previousIndex, index + 1)
@@ -712,7 +735,8 @@ function normalizeBRouter(payload) {
       const delta = ((bearing(path[before], path[after]) - bearing(path[before], path[i]) + 540) % 360) - 180;
       if (Math.abs(delta) < 32) continue;
       const instructions = Math.abs(delta) > 145 ? 'Prenez franchement le virage' : delta > 0 ? 'Tournez à droite' : 'Tournez à gauche';
-      steps.push({instructions, distanceMeters: distanceAt[i] - distanceAt[previousIndex], endLocation: {lat: path[i][0], lon: path[i][1]}, path: path.slice(previousIndex, i + 1)});
+      const direction = Math.abs(delta) > 145 ? 'uturn' : delta > 0 ? 'right' : 'left';
+      steps.push({instructions, direction, distanceMeters: distanceAt[i] - distanceAt[previousIndex], endLocation: {lat: path[i][0], lon: path[i][1]}, path: path.slice(previousIndex, i + 1)});
       previousIndex = i;
       lastTurnAt = distanceAt[i];
     }
@@ -722,6 +746,7 @@ function normalizeBRouter(payload) {
     const finalPoint = path.at(-1);
     steps.push({
       instructions: 'Continuez jusqu’à l’arrivée',
+      direction: 'straight',
       distanceMeters: distanceAt.at(-1) - distanceAt[previousIndex],
       endLocation: {lat: finalPoint[0], lon: finalPoint[1]},
       path: path.slice(previousIndex)
@@ -1857,7 +1882,16 @@ function updateNavigation(position) {
   }
   if (advanced || distance <= 150) announceStep(state.currentStep);
   $('#nav-instruction').textContent = localizedText(step.instructions);
-  $('#nav-distance').textContent = formatProximity(distance) + ' avant la prochaine étape';
+  const direction = step.direction || navigationDirectionFromInstruction(step.instructions);
+  const arrowGlyph = ({left: '←', right: '→', uturn: '↶', roundabout: '↻', straight: '↑'})[direction] || '↑';
+  const arrow = $('#turn-arrow');
+  arrow.textContent = arrowGlyph;
+  arrow.dataset.direction = direction;
+  const finalStep = state.currentStep === steps.length - 1 && /arriv|destination|finish|llegad|到达|मंज़िल|الوصول/i.test(step.instructions);
+  const passageStep = /étape|point de passage|stop|via|途经点|पड़ाव|نقطة/i.test(step.instructions);
+  const distanceLabel = finalStep ? 'avant l’arrivée' : passageStep ? 'avant le point de passage' : 'avant la prochaine intersection';
+  $('#nav-distance').textContent = `${formatNumber(Math.round(distance), 0)} m ${localizedText(distanceLabel)}`;
+  arrow.setAttribute('aria-label', localizedText(step.instructions) + ', ' + $('#nav-distance').textContent);
   $('#nav-step-count').textContent = 'Étape ' + (state.currentStep + 1) + ' / ' + steps.length;
   const routeMeters = Math.max(0, state.route.distanceMeters || 0);
   const riddenThisRoute = Math.max(0, state.distanceTravelledMeters - state.routeStartDistanceTravelled);
