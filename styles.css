@@ -923,3 +923,12 @@ html[dir="rtl"] .modal-label{text-align:right}
 @keyframes arrival-intro-exit{0%,82%{opacity:1;transform:scale(1);visibility:visible}100%{opacity:0;transform:scale(1.025);visibility:hidden}}
 @media(max-width:600px){.arrival-intro__split .arrival-intro__scene{width:100vw;height:min(570px,76vh);min-height:330px}}
 @media(prefers-reduced-motion:reduce){.arrival-intro{animation-duration:.01ms!important;animation-delay:0s!important}.arrival-intro__split{display:none!important}.arrival-intro__lightning,.arrival-intro__flash{display:none!important}.arrival-intro__backdrop,.arrival-intro:before,.arrival-intro:after{display:none!important}}
+
+.manual-stage-drag{width:35px;height:35px;flex:none;border:1px solid #e2e8df;border-radius:9px;background:#f7f9f5;color:#748078;font:700 19px/1 'DM Sans',sans-serif;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+.manual-stage-drag:hover,.manual-stage-drag:focus-visible{background:var(--mode-accent);color:var(--mode-deep,#17221a);outline:none}
+.manual-stage-drag:active{cursor:grabbing}
+.manual-stage-list.is-reordering{user-select:none;-webkit-user-select:none}
+.manual-stage-row{transition:opacity .12s ease,border-color .12s ease,transform .12s ease}
+.manual-stage-row.is-dragging{opacity:.48;border-style:dashed;transform:scale(.985)}
+.manual-stage-row.is-drop-target{border-color:var(--mode-strong);box-shadow:0 0 0 2px color-mix(in srgb,var(--mode-accent) 45%,transparent)}
+@media(max-width:520px){.manual-stage-drag{width:38px;height:38px;font-size:21px}}
