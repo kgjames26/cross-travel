@@ -886,3 +886,40 @@ html[dir="rtl"] .modal-label{text-align:right}
   100%{opacity:0;transform:scale(1.12);visibility:hidden;clip-path:polygon(0 0,0 0,0 0,0 0,0 0,0 0,0 0,0 0,0 0,0 0)}
 }
 @media(prefers-reduced-motion:reduce){.arrival-intro{animation-duration:.01ms;animation-delay:0s}.arrival-intro__lightning,.arrival-intro__flash{display:none}}
+
+/* The lightning becomes the seam; the intro opens as two moving panels. */
+.arrival-intro{isolation:isolate;background:transparent;clip-path:none;animation:arrival-intro-exit .72s cubic-bezier(.65,0,.85,.35) 1.95s forwards}
+.arrival-intro:before,.arrival-intro:after{z-index:0;animation:arrival-rings-fade .16s ease-out 1.95s forwards}
+.arrival-intro__backdrop{position:absolute;inset:0;z-index:0;background:radial-gradient(ellipse at 18% 82%,rgba(116,191,48,.22),transparent 33%),radial-gradient(ellipse at 82% 22%,rgba(255,94,61,.19),transparent 32%),radial-gradient(ellipse at 52% 48%,#1e3028 0,#111a16 72%);animation:arrival-backdrop-fade .12s linear 1.95s forwards}
+.arrival-intro__scene{z-index:1;animation:arrival-scene-fade .08s linear 1.95s forwards}
+.arrival-intro__split{position:absolute;inset:0;z-index:2;visibility:hidden;pointer-events:none;animation:arrival-split-stage .72s ease 1.95s forwards}
+.arrival-intro__pane{position:absolute;inset:0;overflow:visible;background:radial-gradient(ellipse at 18% 82%,rgba(116,191,48,.22),transparent 33%),radial-gradient(ellipse at 82% 22%,rgba(255,94,61,.19),transparent 32%),radial-gradient(ellipse at 52% 48%,#1e3028 0,#111a16 72%);will-change:transform,opacity;animation:arrival-panel-open .72s cubic-bezier(.2,.72,.18,1) 1.95s both}
+.arrival-intro__pane--left{clip-path:polygon(0 0,68% 0,65% 13%,73% 23%,55% 40%,64% 51%,45% 67%,54% 78%,32% 100%,0 100%)}
+.arrival-intro__pane--right{clip-path:polygon(68% 0,100% 0,100% 100%,32% 100%,54% 78%,45% 67%,64% 51%,55% 40%,73% 23%,65% 13%)}
+.arrival-intro__split .arrival-intro__scene{position:absolute;top:50%;left:50%;width:min(1020px,94vw);height:min(640px,86vh);min-height:350px;transform:translate(-50%,-50%);animation:none!important}
+.arrival-intro__split .arrival-intro__brand,.arrival-intro__split .arrival-intro__track path,.arrival-intro__split .arrival-vehicle,.arrival-intro__split .arrival-intro__caption{animation:none!important;opacity:1!important}
+.arrival-intro__split .arrival-intro__brand{transform:translateX(-50%)}
+.arrival-intro__split .arrival-intro__track path{stroke-dashoffset:0}
+.arrival-intro__split .arrival-vehicle{transform:none}
+.arrival-intro__split .arrival-intro__caption{transform:translateX(-50%)}
+.arrival-intro__lightning{animation:arrival-lightning-fade .22s ease-out 1.9s forwards}
+.arrival-intro__lightning path{animation:arrival-lightning-draw .25s cubic-bezier(.15,.7,.25,1) 1.62s forwards}
+.arrival-intro__flash{animation:arrival-lightning-flash .2s ease-out 1.83s both}
+@keyframes arrival-lightning-draw{0%{opacity:0;stroke-dashoffset:1500}10%{opacity:1}100%{opacity:1;stroke-dashoffset:0}}
+@keyframes arrival-lightning-fade{to{opacity:0}}
+@keyframes arrival-rings-fade{to{opacity:0}}
+@keyframes arrival-backdrop-fade{to{opacity:0}}
+@keyframes arrival-scene-fade{to{opacity:0}}
+@keyframes arrival-split-stage{0%{visibility:visible}99%{visibility:visible}100%{visibility:hidden}}
+@keyframes arrival-panel-open{
+  0%{opacity:1;transform:translate3d(0,0,0) scale(1)}
+  42%{opacity:1}
+  100%{opacity:0}
+}
+.arrival-intro__pane--left{animation-name:arrival-panel-left}
+.arrival-intro__pane--right{animation-name:arrival-panel-right}
+@keyframes arrival-panel-left{0%{opacity:1;transform:translate3d(0,0,0) scale(1)}64%{opacity:1}100%{opacity:0;transform:translate3d(-56vw,0,0) scale(.96)}}
+@keyframes arrival-panel-right{0%{opacity:1;transform:translate3d(0,0,0) scale(1)}64%{opacity:1}100%{opacity:0;transform:translate3d(56vw,0,0) scale(.96)}}
+@keyframes arrival-intro-exit{0%,82%{opacity:1;transform:scale(1);visibility:visible}100%{opacity:0;transform:scale(1.025);visibility:hidden}}
+@media(max-width:600px){.arrival-intro__split .arrival-intro__scene{width:100vw;height:min(570px,76vh);min-height:330px}}
+@media(prefers-reduced-motion:reduce){.arrival-intro{animation-duration:.01ms!important;animation-delay:0s!important}.arrival-intro__split{display:none!important}.arrival-intro__lightning,.arrival-intro__flash{display:none!important}.arrival-intro__backdrop,.arrival-intro:before,.arrival-intro:after{display:none!important}}
