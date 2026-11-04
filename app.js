@@ -6,7 +6,7 @@ const state = {
   origin: null, destination: null, currentStep: 0, watchId: null, wakeLock: null,
   lastPosition: null, navigationMarker: null, rerouting: false, lastRerouteAt: 0,
   lastGeocodeAt: 0, routeServer: localStorage.getItem('ct_route_server') || DEFAULT_ROUTER,
-  mode: localStorage.getItem('ct_mode') || 'vtt', mapPickTarget: null, manualMode: false, manualPoints: [], manualLegs: [], manualMarkers: [], manualLine: null, manualController: null, manualRoutingVersion: 0,
+  mode: localStorage.getItem('ct_mode') || 'vtt', mapPickTarget: null, manualMode: false, manualReturnToStart: false, manualPoints: [], manualLegs: [], manualMarkers: [], manualLine: null, manualController: null, manualRoutingVersion: 0,
   seekIntense: localStorage.getItem('ct_seek_intense') === 'true',
   familyFast: localStorage.getItem('ct_family_fast') === 'true',
   voiceEnabled: localStorage.getItem('ct_voice_enabled') !== 'false', lastSpokenStep: -1,
@@ -407,15 +407,19 @@ function updateManualModeUI() {
   }
 }
 
-async function requestManualSegment(origin, destination, signal) {
+async function requestManualSegment(origin, destination, signal, shortest = false) {
   const params = new URLSearchParams({
     lonlats: `${origin.lon},${origin.lat}|${destination.lon},${destination.lat}`,
-    profile: 'trekking', alternativeidx: '0', format: 'geojson'
+    profile: shortest ? 'shortest' : 'trekking', alternativeidx: '0', format: 'geojson'
   });
   const response = await fetch(`${BROUTER_URL}?${params}`, {signal, headers: {'Accept': 'application/geo+json'}});
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || `BRouter indisponible (${response.status}).`);
   return normalizeBRouter(payload);
+}
+
+function manualExpectedLegCount() {
+  return Math.max(0, state.manualPoints.length - 1) + (state.manualReturnToStart && state.manualPoints.length > 1 ? 1 : 0);
 }
 
 function renderManualTrack() {
@@ -436,7 +440,8 @@ function renderManualTrack() {
     state.manualMarkers.push(L.marker([point.lat, point.lon], {icon, interactive: false, keyboard: false, zIndexOffset: 900}).addTo(state.map));
   });
 
-  let total = 0, cumulativeKnown = 0, complete = state.manualLegs.length === points.length - 1;
+  const expectedLegCount = manualExpectedLegCount();
+  let total = 0, cumulativeKnown = 0, complete = state.manualLegs.length === expectedLegCount;
   const cumulative = [0];
   state.manualLegs.forEach(leg => {
     if (leg.status === 'ready') { total += leg.distanceMeters; cumulativeKnown += leg.distanceMeters; }
@@ -459,7 +464,16 @@ function renderManualTrack() {
     const stageName = isFinish ? 'Arrivée' : `Étape ${label}`;
     rows.push(`<li class="manual-stage-row"><span class="manual-stage-badge${isFinish ? ' manual-stage-finish' : ''}">${badge}</span><div class="manual-stage-copy"><strong>${stageName}</strong><span>${points[i].lat.toFixed(5)}, ${points[i].lon.toFixed(5)} · ${details}</span><small>${cumulativeLabel}</small></div><div class="manual-stage-controls"><button class="manual-stage-order" type="button" data-move-manual="${i}" data-direction="-1" aria-label="Monter ${stageName}" ${i === 1 ? 'disabled' : ''}>↑</button><button class="manual-stage-order" type="button" data-move-manual="${i}" data-direction="1" aria-label="Descendre ${stageName}" ${i === points.length - 1 ? 'disabled' : ''}>↓</button><button class="manual-remove-step" type="button" data-manual-remove="${i}" aria-label="Supprimer ${stageName}">×</button></div></li>`);
   }
+  if (points.length > 1) {
+    const returnLeg = state.manualReturnToStart ? state.manualLegs.at(-1) : null;
+    const returnDetail = !state.manualReturnToStart ? 'Rallier le départ par le chemin le plus court' : returnLeg?.status === 'ready' ? `Retour : ${formatDistance(returnLeg.distanceMeters)}` : returnLeg?.status === 'error' ? 'Retour introuvable, réessayez' : 'Calcul du retour vers le départ…';
+    rows.push(`<li class="manual-stage-row manual-return-row"><span class="manual-stage-badge manual-return-badge">${state.manualReturnToStart ? '↻' : '＋'}</span><div class="manual-stage-copy"><strong>Terminer automatiquement le parcours</strong><span>${returnDetail}</span></div><button class="manual-return-toggle${state.manualReturnToStart ? ' is-active' : ''}" type="button" data-manual-return aria-pressed="${state.manualReturnToStart}" aria-label="${state.manualReturnToStart ? 'Désactiver' : 'Activer'} le retour automatique au départ">${state.manualReturnToStart ? 'Activé' : 'Ajouter'}</button></li>`);
+  }
   $('#manual-stage-list').innerHTML = rows.join('');
+  $('#manual-stage-list').querySelector('[data-manual-return]')?.addEventListener('click', () => {
+    state.manualReturnToStart = !state.manualReturnToStart;
+    updateManualTrack();
+  });
   $('#manual-stage-list').querySelectorAll('[data-manual-remove]').forEach(button => button.addEventListener('click', () => {
     state.manualPoints.splice(Number(button.dataset.manualRemove), 1);
     updateManualTrack();
@@ -472,19 +486,21 @@ function renderManualTrack() {
   }));
 
   if (points.length > 1) {
-    state.destination = points.at(-1);
-    $('#destination-input').value = `Étape ${manualStepName(points.length - 2)}`;
+    state.destination = state.manualReturnToStart ? points[0] : points.at(-1);
+    $('#destination-input').value = state.manualReturnToStart ? 'Retour au départ' : `Étape ${manualStepName(points.length - 2)}`;
   } else {
     state.destination = null;
     $('#destination-input').value = '';
   }
 
-  if (complete && points.length > 1 && state.manualLegs.every(leg => leg.status === 'ready')) {
+  if (complete && points.length > 1 && state.manualLegs.length === expectedLegCount && state.manualLegs.every(leg => leg.status === 'ready')) {
     const path = [];
     state.manualLegs.forEach((leg, index) => path.push(...(index ? leg.path.slice(1) : leg.path)));
     const speedKmh = state.mode === 'road' ? 22 : state.mode === 'moto' ? 20 : state.mode === 'family' ? state.familyFast ? 16 : 12 : 10;
     const steps = state.manualLegs.map((leg, index) => ({
-      instructions: `Suivez le chemin jusqu’à l’étape ${manualStepName(index)}`,
+      instructions: state.manualReturnToStart && index === points.length - 1
+        ? 'Retournez au point de départ'
+        : index === points.length - 2 ? 'Suivez le chemin jusqu’à l’arrivée' : `Suivez le chemin jusqu’à l’étape ${manualStepName(index)}`,
       distanceMeters: leg.distanceMeters,
       endLocation: {lat: leg.path.at(-1)[0], lon: leg.path.at(-1)[1]},
       path: leg.path
@@ -511,9 +527,13 @@ function renderManualTrack() {
 }
 
 async function recalculateManualLegs(generation, controller) {
-  for (let i = 0; i < state.manualPoints.length - 1; i++) {
+  const points = state.manualPoints;
+  const expectedLegCount = manualExpectedLegCount();
+  for (let i = 0; i < expectedLegCount; i++) {
+    const isReturnLeg = state.manualReturnToStart && i === points.length - 1;
+    const origin = points[i], destination = isReturnLeg ? points[0] : points[i + 1];
     try {
-      const route = await requestManualSegment(state.manualPoints[i], state.manualPoints[i + 1], controller.signal);
+      const route = await requestManualSegment(origin, destination, controller.signal, isReturnLeg);
       if (controller.signal.aborted || generation !== state.manualRoutingVersion) return;
       state.manualLegs[i] = {status: 'ready', path: route.path, distanceMeters: route.distanceMeters, durationSeconds: route.durationSeconds};
     } catch (error) {
@@ -529,7 +549,7 @@ function updateManualTrack() {
   if (state.manualController) state.manualController.abort();
   const generation = ++state.manualRoutingVersion;
   state.manualController = new AbortController();
-  state.manualLegs = state.manualPoints.slice(1).map(() => ({status: 'pending', path: [], distanceMeters: 0, durationSeconds: 0}));
+  state.manualLegs = Array.from({length: manualExpectedLegCount()}, () => ({status: 'pending', path: [], distanceMeters: 0, durationSeconds: 0}));
   renderManualTrack();
   if (state.manualLegs.length) recalculateManualLegs(generation, state.manualController);
 }
@@ -541,9 +561,9 @@ async function toggleManualMode() {
   try {
     const origin = await resolvePoint($('#origin-input'), state.origin);
     state.origin = origin;
-    const resumeTrack = Boolean(state.manualPoints.length > 1 && state.manualLegs.length === state.manualPoints.length - 1);
+    const resumeTrack = Boolean(state.manualPoints.length > 1 && state.manualLegs.length === manualExpectedLegCount());
     if (!resumeTrack) {
-      clearDisplayedRoute(); state.destination = null;
+      clearDisplayedRoute(); state.destination = null; state.manualReturnToStart = false;
       $('#destination-input').value = ''; state.manualPoints = [origin]; state.manualLegs = []; state.currentStep = 0;
     } else if (state.manualPoints[0].lat !== origin.lat || state.manualPoints[0].lon !== origin.lon) {
       state.manualPoints = [origin]; state.manualLegs = []; clearDisplayedRoute();
@@ -570,6 +590,7 @@ function resetManualTrack() {
   if (state.manualController) state.manualController.abort();
   clearDisplayedRoute();
   state.destination = null; $('#destination-input').value = ''; state.currentStep = 0;
+  state.manualReturnToStart = false;
   state.manualPoints = state.origin ? [state.origin] : [];
   state.manualLegs = [];
   if (state.manualPoints.length) updateManualTrack();
@@ -655,7 +676,7 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
     state.currentStep = 0;
     state.lastSpokenStep = -1;
     state.routeStartDistanceTravelled = state.distanceTravelledMeters;
-    state.manualPoints = []; state.manualLegs = [];
+    state.manualPoints = []; state.manualLegs = []; state.manualReturnToStart = false;
     updateManualModeUI();
     drawRoute(); showRoute();
     $('#route-result').classList.remove('manual-result');
@@ -1074,6 +1095,7 @@ function loadSavedRoute(index) {
     state.manualMode = false;
     state.origin = route.origin; state.destination = route.destination;
     state.manualPoints = route.manualPoints.map(point => ({lat: Number(point.lat), lon: Number(point.lon)}));
+    state.manualReturnToStart = Boolean(route.manualReturnToStart);
     $('#origin-input').value = route.originLabel || 'Point enregistré';
     closeModal('saved-modal');
     clearDisplayedRoute();
@@ -1085,6 +1107,7 @@ function loadSavedRoute(index) {
   if (state.manualMode) finishManualMode();
   clearDisplayedRoute();
   state.manualPoints = [];
+  state.manualReturnToStart = false;
   if (route.mode === 'family' && typeof route.familyFast === 'boolean') {
     state.familyFast = route.familyFast; localStorage.setItem('ct_family_fast', String(state.familyFast)); setMode('family');
   }
@@ -1117,7 +1140,7 @@ function saveSaved() { localStorage.setItem('ct_saved_routes', JSON.stringify(st
 
 function saveRoute() {
   if (!state.route) { toast('Aucun parcours à enregistrer.'); return; }
-  state.saved.unshift({title: routeLabel(), distance: state.route.distanceMeters, savedAt: new Date().toISOString(), mode: state.mode, familyFast: state.mode === 'family' ? state.familyFast : undefined, manualPoints: state.route.manual ? state.manualPoints.map(point => ({lat: point.lat, lon: point.lon})) : undefined, origin: state.origin, destination: state.destination, originLabel: $('#origin-input').value, destinationLabel: $('#destination-input').value});
+  state.saved.unshift({title: routeLabel(), distance: state.route.distanceMeters, savedAt: new Date().toISOString(), mode: state.mode, familyFast: state.mode === 'family' ? state.familyFast : undefined, manualPoints: state.route.manual ? state.manualPoints.map(point => ({lat: point.lat, lon: point.lon})) : undefined, manualReturnToStart: state.route.manual ? state.manualReturnToStart : undefined, origin: state.origin, destination: state.destination, originLabel: $('#origin-input').value, destinationLabel: $('#destination-input').value});
   state.saved = state.saved.slice(0, 20); saveSaved(); toast('Parcours enregistré sur cet appareil.');
 }
 
