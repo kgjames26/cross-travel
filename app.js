@@ -109,13 +109,16 @@ function formatDuration(seconds) {
 }
 function toMeters(kilometers) { return Number(kilometers || 0) * 1000; }
 function routeLabel() { return `${$('#origin-input').value.trim()} → ${$('#destination-input').value.trim()}`; }
-function startMarkerIcon() {
+function routePointMarkerIcon(asset) {
   return L.divIcon({
     className: 'start-logo-shell',
-    html: '<span class="start-logo-marker"><img src="assets/start-flag.svg" alt="" /></span>',
+    html: `<span class="start-logo-marker"><img src="${asset}" alt="" /></span>`,
     iconSize: [82, 42], iconAnchor: [41, 21]
   });
 }
+
+function startMarkerIcon() { return routePointMarkerIcon('assets/start-flag.svg'); }
+function finishMarkerIcon() { return routePointMarkerIcon('assets/finish-flag.svg'); }
 
 function createStartMarker(point) {
   return L.marker([point.lat, point.lon], {
@@ -134,7 +137,7 @@ function setPoint(which, point, label) {
       const selected = state[key];
       if (!selected) continue;
       if (key === 'origin') state.markers.push(createStartMarker(selected).addTo(state.map));
-      else state.markers.push(L.circleMarker([selected.lat, selected.lon], {radius: 7, color: '#fff', weight: 3, fillColor: color, fillOpacity: 1}).addTo(state.map));
+      else state.markers.push(L.marker([selected.lat, selected.lon], {icon: finishMarkerIcon(), interactive: false, keyboard: false, zIndexOffset: 1300}).addTo(state.map));
     }
   }
   if (which === 'origin' && (state.manualMode || state.route?.manual)) resetManualTrack();
@@ -519,13 +522,16 @@ function renderManualTrack() {
   }
   points.forEach((point, index) => {
     const isFinish = index === points.length - 1 && index > 0;
-    const label = index === 0 ? 'D' : isFinish ? '🏁' : manualStepName(index - 1);
     if (index === 0) {
       state.manualMarkers.push(createStartMarker(point).addTo(state.map));
       return;
     }
-    const markerClass = isFinish ? ' manual-marker-finish' : '';
-    const icon = L.divIcon({className: 'manual-marker-shell', html: `<span class="manual-marker${markerClass}">${label}</span>`, iconSize: [34, 34], iconAnchor: [17, 17]});
+    if (isFinish) {
+      state.manualMarkers.push(L.marker([point.lat, point.lon], {icon: finishMarkerIcon(), interactive: false, keyboard: false, zIndexOffset: 1300}).addTo(state.map));
+      return;
+    }
+    const label = manualStepName(index - 1);
+    const icon = L.divIcon({className: 'manual-marker-shell', html: `<span class="manual-marker">${label}</span>`, iconSize: [34, 34], iconAnchor: [17, 17]});
     state.manualMarkers.push(L.marker([point.lat, point.lon], {icon, interactive: false, keyboard: false, zIndexOffset: 900}).addTo(state.map));
   });
 
@@ -850,7 +856,7 @@ function drawRoute() {
   state.map.fitBounds(state.routeLayer.getBounds(), {padding: [55, 55]});
   if (state.origin) state.markers.push(createStartMarker(state.origin).addTo(state.map));
   if (state.destination && (!state.origin || state.map.distance([state.origin.lat, state.origin.lon], [state.destination.lat, state.destination.lon]) > 3)) {
-    state.markers.push(L.circleMarker([state.destination.lat, state.destination.lon], {radius: 7, color: '#fff', weight: 3, fillColor: '#252e29', fillOpacity: 1}).addTo(state.map));
+    state.markers.push(L.marker([state.destination.lat, state.destination.lon], {icon: finishMarkerIcon(), interactive: false, keyboard: false, zIndexOffset: 1300}).addTo(state.map));
   }
   (state.route.legs[0]?.steps || []).forEach(step => {
     if (step.path?.length > 1) state.stepLayers.push(L.polyline(step.path, {color: themeStep, weight: 3, opacity: .5, dashArray: '5 7'}).addTo(state.map));
