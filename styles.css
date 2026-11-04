@@ -932,3 +932,6 @@ html[dir="rtl"] .modal-label{text-align:right}
 .manual-stage-row.is-dragging{opacity:.48;border-style:dashed;transform:scale(.985)}
 .manual-stage-row.is-drop-target{border-color:var(--mode-strong);box-shadow:0 0 0 2px color-mix(in srgb,var(--mode-accent) 45%,transparent)}
 @media(max-width:520px){.manual-stage-drag{width:38px;height:38px;font-size:21px}}
+
+.manual-stage-drag{display:grid;place-items:center}.manual-stage-drag svg{display:block;width:18px;height:18px}
+@media(max-width:520px){.manual-stage-drag svg{width:20px;height:20px}}
