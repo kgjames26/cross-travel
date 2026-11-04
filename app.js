@@ -12,14 +12,14 @@ const state = {
   origin: null, destination: null, currentStep: 0, watchId: null, wakeLock: null,
   lastPosition: null, navigationMarker: null, rerouting: false, lastRerouteAt: 0,
   lastGeocodeAt: 0, routeServer: localStorage.getItem('ct_route_server') || DEFAULT_ROUTER,
-  mode: localStorage.getItem('ct_mode') || 'vtt', mapPickTarget: null, manualMode: false, manualReturnToStart: false, manualDestinationLocked: false, manualPoints: [], manualLegs: [], manualMarkers: [], manualLine: null, manualController: null, manualRoutingVersion: 0,
+  mode: localStorage.getItem('ct_mode') || 'vtt', language: localStorage.getItem('ct_language') || 'fr', units: localStorage.getItem('ct_units') || 'metric', mapPickTarget: null, manualMode: false, manualReturnToStart: false, manualDestinationLocked: false, manualPoints: [], manualLegs: [], manualMarkers: [], manualLine: null, manualController: null, manualRoutingVersion: 0,
   seekIntense: localStorage.getItem('ct_seek_intense') === 'true',
   familyFast: localStorage.getItem('ct_family_fast') === 'true',
   voiceEnabled: localStorage.getItem('ct_voice_enabled') !== 'false', lastSpokenStep: -1,
   distanceTravelledMeters: 0, movingDistanceMeters: 0, movingSeconds: 0,
   currentSpeedKmh: 0, previousGpsSample: null, routeStartDistanceTravelled: 0, lastHeading: null, lastMapBearing: 0, navigationHeading: null, lastNavigationZoomAt: 0, navigationFollow: true, programmaticNavigationZoom: false,
   searchTimers: {}, searchControllers: {}, suggestions: {origin: [], destination: []},
-  navigationAvoids: [], navigationViaPoints: [], navigationSegments: [], navigationManualRoute: false, navigationDetour: null, navigationPointLayers: [], navigationRerouteController: null, navigationRerouteVersion: 0,
+  navigationAvoids: [], navigationViaPoints: [], navigationSegments: [], navigationManualRoute: false, navigationProgress: 0, navigationDetour: null, navigationPointLayers: [], navigationRerouteController: null, navigationRerouteVersion: 0,
   navigationResumeSnapshot: readNavigationResumeSnapshot(), lastResumeSaveAt: 0, manualUndo: null,
   saved: JSON.parse(localStorage.getItem('ct_saved_routes') || '[]')
 };
@@ -76,7 +76,7 @@ function persistNavigationResume(force = false) {
     mode: state.mode, familyFast: state.familyFast, seekIntense: state.seekIntense,
     route, origin: state.origin, destination: state.destination,
     originLabel: $('#origin-input').value, destinationLabel: $('#destination-input').value,
-    lastPosition: state.lastPosition, currentStep: state.currentStep,
+    lastPosition: state.lastPosition, currentStep: state.currentStep, navigationProgress: state.navigationProgress,
     distanceTravelledMeters: state.distanceTravelledMeters, movingDistanceMeters: state.movingDistanceMeters,
     movingSeconds: state.movingSeconds, routeStartDistanceTravelled: state.routeStartDistanceTravelled,
     manualPoints: state.manualPoints, manualLegs: state.manualLegs, manualReturnToStart: state.manualReturnToStart, manualDestinationLocked: state.manualDestinationLocked, navigationDetour: state.navigationDetour,
@@ -95,13 +95,22 @@ function closeModal(id) { $('#'+id).classList.add('hidden'); }
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+function formatNumber(value, digits = 1) {
+  return new Intl.NumberFormat(LANGUAGE_LOCALES[state.language] || 'fr-BE', {minimumFractionDigits: digits, maximumFractionDigits: digits}).format(value);
+}
 function formatDistance(meters) {
-  const kilometers = Math.max(0, Number(meters) || 0) / 1000;
-  const precision = kilometers < 10 ? 2 : 1;
-  return `${kilometers.toFixed(precision).replace('.', ',')} km`;
+  const distance = Math.max(0, Number(meters) || 0);
+  if (state.units === 'imperial') {
+    const miles = distance / 1609.344;
+    return formatNumber(miles, miles < 10 ? 2 : 1) + ' mi';
+  }
+  const kilometers = distance / 1000;
+  return formatNumber(kilometers, kilometers < 10 ? 2 : 1) + ' km';
 }
 function formatProximity(meters) {
-  return meters < 1000 ? `${Math.max(0, Math.round(meters))} m` : formatDistance(meters);
+  const distance = Math.max(0, Number(meters) || 0);
+  if (state.units === 'imperial') return distance < 1609.344 ? formatNumber(distance / 0.3048, 0) + ' ft' : formatDistance(distance);
+  return distance < 1000 ? formatNumber(distance, 0) + ' m' : formatDistance(distance);
 }
 function formatDuration(seconds) {
   const minutes = Math.max(1, Math.round(seconds / 60));
@@ -109,16 +118,259 @@ function formatDuration(seconds) {
 }
 function toMeters(kilometers) { return Number(kilometers || 0) * 1000; }
 function routeLabel() { return `${$('#origin-input').value.trim()} → ${$('#destination-input').value.trim()}`; }
+const LANGUAGE_LOCALES = {fr: 'fr-BE', en: 'en-US', zh: 'zh-CN', hi: 'hi-IN', es: 'es-ES', ar: 'ar'};
+const I18N_ROWS = [
+ ['Cross Travel — vélo familial, VTT & motocross','Cross Travel — family cycling, trail cycling & motocross','Cross Travel — 家庭骑行、山地车与越野摩托','Cross Travel — पारिवारिक साइकिल, माउंटेन बाइक और मोटोक्रॉस','Cross Travel — ciclismo familiar, ciclismo de montaña y motocross','Cross Travel — دراجات عائلية وجبلية وموتوكروس'],
+ ['En ligne','Online','在线','ऑनलाइन','En línea','متصل'],['Hors ligne','Offline','离线','ऑफ़लाइन','Sin conexión','غير متصل'],
+ ['QUATRE FAÇONS DE PRENDRE LA ROUTE','FOUR WAYS TO RIDE','四种出行方式','सवारी के चार तरीके','CUATRO FORMAS DE RODAR','أربع طرق للانطلاق'],
+ ['Du bitume à la terre,','From tarmac to trail,','从柏油路到土路，','पक्की सड़क से कच्चे रास्ते तक,','Del asfalto a la tierra,','من الإسفلت إلى الطرق الترابية،'],
+ ['trouvez votre itinéraire','find your route','找到你的路线','अपना रास्ता खोजें','encuentra tu ruta','اعثر على مسارك'],
+ ['PLANIFICATEUR','ROUTE PLANNER','路线规划','मार्ग योजनाकार','PLANIFICADOR','مخطط المسار'],['Créer un itinéraire','Plan a route','创建路线','मार्ग बनाएँ','Crear una ruta','أنشئ مسارًا'],
+ ['Départ','Start','出发点','प्रस्थान','Salida','الانطلاق'],['Arrivée','Finish','终点','आगमन','Llegada','الوصول'],['Pratique','Activity','运动方式','गतिविधि','Actividad','النشاط'],
+ ['Vélo familial','Family cycling','家庭骑行','पारिवारिक साइकिल','Ciclismo familiar','دراجة عائلية'],['RAVeL & chemins','Greenways & trails','绿道与小径','ग्रीनवे और पगडंडियाँ','Vías verdes y caminos','المسارات الخضراء والدروب'],
+ ['Vélo de route','Road cycling','公路骑行','रोड साइकिलिंग','Ciclismo de carretera','دراجة طريق'],['Rapide & roulant','Fast & smooth','快速平顺','तेज़ और सुगम','Rápido y fluido','سريع وسلس'],
+ ['VTT','Trail cycling','山地车','माउंटेन बाइक','Bicicleta de montaña','دراجة جبلية'],['Chemins & pistes','Trails & tracks','小径与山道','पगडंडियाँ और ट्रैक','Caminos y senderos','الدروب والمسارات'],
+ ['Motocross','Motocross','越野摩托','मोटोक्रॉस','Motocross','موتوكروس'],['Petites routes','Quiet roads','小路','शांत सड़कें','Carreteras tranquilas','طرق هادئة'],
+ ['Trajet le plus rapide','Fastest route','最快路线','सबसे तेज़ मार्ग','Ruta más rápida','أسرع مسار'],['GRANDS AXES ÉVITÉS','AVOID MAIN ROADS','避开主干道','मुख्य सड़कों से बचें','EVITAR VÍAS PRINCIPALES','تجنب الطرق الرئيسية'],
+ ['Priorité aux chemins et pistes','Trails and tracks first','优先选择小径与山道','पहले पगडंडियाँ और ट्रैक','Prioridad a caminos y senderos','الأولوية للدروب والمسارات'],
+ ['SELON ACCÈS','WHERE ACCESSIBLE','依通行权限','जहाँ पहुँच संभव हो','SEGÚN ACCESO','بحسب السماح بالدخول'],
+ ['Parcours sensations','Adventure route','刺激路线','रोमांचक मार्ग','Ruta de aventura','مسار مليء بالإثارة'],['DÉTOURS ACCEPTÉS','DETOURS OK','接受绕行','वैकल्पिक रास्ते स्वीकार्य','SE ACEPTAN DESVÍOS','التحويلات مقبولة'],
+ ['Calculer mon itinéraire','Calculate my route','计算路线','मेरा मार्ग निकालें','Calcular mi ruta','احسب مساري'],
+ ['Tracer manuellement sur la carte','Draw manually on the map','在地图上手动绘制','नक्शे पर स्वयं बनाएँ','Dibujar manualmente en el mapa','ارسم المسار يدويًا على الخريطة'],
+ ['ITINÉRAIRE CALCULÉ','ROUTE READY','路线已计算','मार्ग तैयार','RUTA CALCULADA','المسار جاهز'],['Votre parcours','Your route','你的路线','आपका मार्ग','Tu ruta','مسارك'],
+ ['＋ Enregistrer','＋ Save','＋ 保存','＋ सहेजें','＋ Guardar','＋ حفظ'],['Démarrer la navigation','Start navigation','开始导航','नेविगेशन शुरू करें','Iniciar navegación','ابدأ التنقل'],
+ ['DISTANCE','DISTANCE','距离','दूरी','DISTANCIA','المسافة'],['DURÉE ESTIMÉE','ESTIMATED TIME','预计时长','अनुमानित समय','DURACIÓN ESTIMADA','المدة المقدرة'],['ÉTAPES','STEPS','步骤','चरण','ETAPAS','المراحل'],
+ ['Exporter GPX · OsmAnd','Export GPX · OsmAnd','导出 GPX · OsmAnd','GPX निर्यात · OsmAnd','Exportar GPX · OsmAnd','تصدير GPX · OsmAnd'],['Chercher sur Wikiloc ↗','Search Wikiloc ↗','在 Wikiloc 搜索 ↗','Wikiloc पर खोजें ↗','Buscar en Wikiloc ↗','ابحث في Wikiloc ↗'],
+ ['VOS REPÈRES','YOUR SAVED ROUTES','已保存路线','आपके सहेजे मार्ग','TUS RUTAS','مساراتك المحفوظة'],['Parcours enregistrés','Saved routes','已保存路线','सहेजे गए मार्ग','Rutas guardadas','المسارات المحفوظة'],
+ ['Vos itinéraires favoris apparaîtront ici.','Your saved routes will appear here.','已保存的路线会显示在这里。','आपके सहेजे गए रास्ते यहाँ दिखेंगे।','Tus rutas guardadas aparecerán aquí.','ستظهر مساراتك المحفوظة هنا.'],
+ ['Respectez la signalisation et les accès locaux. Une voie ouverte au VTT peut être interdite aux motos.','Follow local signs and access rules. A trail open to mountain bikes may be closed to motorcycles.','请遵守当地标志和通行规定。山地车可通行的路段可能禁止摩托车。','स्थानीय संकेतों और पहुँच नियमों का पालन करें। माउंटेन बाइक के लिए खुला रास्ता मोटरसाइकिल के लिए बंद हो सकता है।','Respeta las señales y los accesos locales. Un camino abierto a bicicleta de montaña puede estar cerrado a motos.','احترم الإشارات وقواعد الدخول المحلية. قد يُسمح بالدراجة الجبلية ويُمنع بالدراجة النارية.'],
+ ['Votre terrain de jeu commence ici','Your next ride starts here','你的探索之旅从这里开始','आपकी सवारी यहीं से शुरू होती है','Tu próxima aventura empieza aquí','تبدأ مغامرتك هنا'],
+ ['Chargement de la carte OpenStreetMap…','Loading OpenStreetMap…','正在加载 OpenStreetMap 地图…','OpenStreetMap लोड हो रहा है…','Cargando OpenStreetMap…','جارٍ تحميل خريطة OpenStreetMap…'],['Réessayer','Try again','重试','फिर कोशिश करें','Reintentar','حاول مجددًا'],
+ ['CARTE DE REPÉRAGE','ROUTE MAP','路线地图','मार्ग का नक्शा','MAPA DE RUTA','خريطة المسار'],['Satellite','Satellite','卫星图','उपग्रह','Satélite','قمر صناعي'],
+ ['Mode tracé manuel actif · touchez la carte pour ajouter une étape.','Manual drawing is active · tap the map to add a stop.','手动绘制已开启 · 点击地图添加途经点。','मैन्युअल ड्राइंग चालू है · पड़ाव जोड़ने के लिए नक्शे पर टैप करें。','Trazado manual activo · toca el mapa para añadir una etapa.','الرسم اليدوي نشط · اضغط على الخريطة لإضافة نقطة.'],
+ ['Terminer','Finish','完成','समाप्त','Terminar','إنهاء'],['NAVIGATION ACTIVE','NAVIGATION ACTIVE','导航进行中','नेविगेशन सक्रिय','NAVEGACIÓN ACTIVA','التنقل نشط'],['Voix activée','Voice on','语音已开启','आवाज़ चालू','Voz activada','الصوت مفعّل'],
+ ['Annuler le détour','Cancel detour','取消绕行','वैकल्पिक रास्ता रद्द करें','Cancelar desvío','إلغاء التحويلة'],['PROCHAINE INSTRUCTION','NEXT INSTRUCTION','下一条指示','अगला निर्देश','SIGUIENTE INDICACIÓN','التوجيه التالي'],
+ ['Suivez le parcours','Follow the route','沿路线前行','मार्ग का अनुसरण करें','Sigue la ruta','اتبع المسار'],['En attente du GPS','Waiting for GPS','等待 GPS','GPS की प्रतीक्षा','Esperando GPS','بانتظار GPS'],
+ ['VITESSE INSTANTANÉE','CURRENT SPEED','当前速度','वर्तमान गति','VELOCIDAD ACTUAL','السرعة الحالية'],['km/h','km/h','公里/小时','किमी/घंटा','km/h','كم/س'],['mph','mph','英里/小时','मील/घंटा','mph','ميل/س'],
+ ['Analyse de votre vitesse…','Measuring your speed…','正在分析速度…','गति का विश्लेषण…','Analizando tu velocidad…','جارٍ تحليل السرعة…'],['PARCOURU','TRAVELLED','已行驶','तय दूरी','RECORRIDO','المقطوع'],
+ ['RESTANT','REMAINING','剩余','शेष','RESTANTE','المتبقي'],['HEURE D’ARRIVÉE ESTIMÉE','ESTIMATED ARRIVAL','预计到达时间','अनुमानित आगमन','HORA ESTIMADA DE LLEGADA','وقت الوصول المتوقع'],
+ ['Calcul en cours','Calculating','计算中','गणना जारी','Calculando','جارٍ الحساب'],['Recherche du GPS','Searching for GPS','正在搜索 GPS','GPS खोज रहे हैं','Buscando GPS','جارٍ البحث عن GPS'],
+ ['Parcours calculé','Route calculated','路线已计算','मार्ग की गणना हुई','Ruta calculada','تم حساب المسار'],['Statut d’accès non vérifié','Access not verified','通行状态未核实','पहुँच की पुष्टि नहीं हुई','Acceso no verificado','لم يتم التحقق من السماح بالدخول'],
+ ['Planifiez prudemment. Roulez responsablement.','Plan carefully. Ride responsibly.','谨慎规划，安全骑行。','सावधानी से योजना बनाएँ। ज़िम्मेदारी से चलाएँ।','Planifica con cuidado. Conduce con responsabilidad.','خطط بحذر وقد بأمان.'],['À propos & limites','About & limitations','关于与限制','जानकारी और सीमाएँ','Acerca de y límites','حول التطبيق والقيود'],
+ ['CONFIGURATION','SETTINGS','设置','सेटिंग्स','CONFIGURACIÓN','الإعدادات'],['Moteur d’itinéraire OSM','OSM routing engine','OSM 路线引擎','OSM मार्ग इंजन','Motor de rutas OSM','محرك توجيه OSM'],
+ ['Langue','Language','语言','भाषा','Idioma','اللغة'],['Unités','Units','单位','इकाइयाँ','Unidades','الوحدات'],['Métrique','Metric','公制','मीट्रिक','Métrico','متري'],['Impérial','Imperial','英制','इम्पीरियल','Imperial','إمبراطوري'],
+ ['Ex. 5 km et 500 m','E.g. 5 km and 500 m','例如：5 km 和 500 m','उदाहरण: 5 km और 500 m','Ej.: 5 km y 500 m','مثال: 5 km و500 m'],
+ ['Ex. 3,1 mi et 1 640 ft','E.g. 3.1 mi and 1,640 ft','例如：3.1 mi 和 1,640 ft','उदाहरण: 3.1 mi और 1,640 ft','Ej.: 3,1 mi y 1.640 ft','مثال: 3.1 mi و1,640 ft'],
+ ['Annuler','Cancel','取消','रद्द करें','Cancelar','إلغاء'],['Enregistrer','Save','保存','सहेजें','Guardar','حفظ'],
+ ['Moyenne roulée','Moving average','行驶平均速度','चलती औसत','Media en marcha','متوسط السرعة أثناء الحركة'],['En mouvement','Moving','行驶中','चल रहे हैं','En movimiento','متحرك'],['À l’arrêt','Stopped','已停下','रुके हुए','Parado','متوقف'],
+ ['Calculer mon itinéraire familial','Calculate my family route','计算家庭路线','पारिवारिक मार्ग निकालें','Calcular mi ruta familiar','احسب مسار العائلة'],
+ ['Calculer l’itinéraire rapide','Calculate the fastest route','计算最快路线','सबसे तेज़ मार्ग निकालें','Calcular la ruta más rápida','احسب أسرع مسار'],
+ ['Calculer mon itinéraire moto','Calculate my motorcycle route','计算摩托车路线','मोटरसाइकिल मार्ग निकालें','Calcular mi ruta en moto','احسب مسار الدراجة النارية'],
+ ['Calculer mon itinéraire VTT','Calculate my trail cycling route','计算山地车路线','माउंटेन बाइक मार्ग निकालें','Calcular mi ruta de montaña','احسب مسار الدراجة الجبلية'],
+ ['VÉLO FAMILIAL · RAPIDE','FAMILY BIKE · FAST','家庭骑行 · 快速','पारिवारिक साइकिल · तेज़','BICI FAMILIAR · RÁPIDA','دراجة عائلية · سريع'],
+ ['RAVeL · PENTES DOUCES','GREENWAY · GENTLE SLOPES','绿道 · 缓坡','ग्रीनवे · हल्की ढलान','VÍA VERDE · PENDIENTES SUAVES','مسار أخضر · منحدرات لطيفة'],
+ ['ROUTES · RAPIDE','ROAD · FAST','公路 · 快速','सड़क · तेज़','CARRETERA · RÁPIDA','طريق · سريع'],
+ ['VTT · SENSATIONS','TRAIL CYCLING · ADVENTURE','山地车 · 冒险','माउंटेन बाइक · रोमांच','BICI DE MONTAÑA · AVENTURA','جبلية · إثارة'],
+ ['VTT · CHEMINS','TRAIL CYCLING · TRAILS','山地车 · 小径','माउंटेन बाइक · पगडंडियाँ','BICI DE MONTAÑA · CAMINOS','جبلية · دروب'],
+ ['MOTO · SENSATIONS','MOTO · ADVENTURE','摩托 · 冒险','मोटो · रोमांच','MOTO · AVENTURA','دراجة نارية · إثارة'],
+ ['Vélo familial : RAVeL balisés prioritaires; voies cyclables en bord de route fortement pénalisées. Les routes ne servent qu’aux raccordements nécessaires.','Family cycling: marked greenways come first; roadside cycle lanes are strongly penalized. Roads are used only when needed to connect paths.','家庭骑行：优先选择标记绿道；大幅降低沿路自行车道优先级。仅在必要时使用道路连接。','पारिवारिक साइकिल: चिह्नित ग्रीनवे को प्राथमिकता; सड़क किनारे साइकिल लेन को बहुत कम प्राथमिकता। सड़क केवल जोड़ने के लिए।','Ciclismo familiar: prioridad a vías verdes señalizadas; se penalizan mucho los carriles junto a carreteras. Las carreteras solo sirven para conectar.','الدراجة العائلية: الأولوية للمسارات الخضراء؛ تُخفض أولوية المسارات المحاذية للطرق بشدة. تُستخدم الطرق للوصل فقط.'],
+ ['Vélo de route : itinéraire le plus rapide possible sur routes adaptées et pistes cyclables, avec préférence pour les surfaces roulantes.','Road cycling: fastest practical route on suitable roads and cycle paths, favoring smooth surfaces.','公路骑行：在适宜道路和自行车道上选择最快路线，并优先平坦路面。','रोड साइकिल: उपयुक्त सड़कों और साइकिल पथों पर तेज़ मार्ग, चिकनी सतहों को प्राथमिकता।','Ciclismo de carretera: ruta rápida por carreteras adecuadas y carriles bici, con preferencia por superficies lisas.','دراجة الطريق: أسرع مسار عملي عبر الطرق المناسبة ومسارات الدراجات، مع تفضيل الأسطح السلسة.'],
+ ['VTT sensations : les chemins plus engagés sont favorisés, avec des détours acceptés.','Trail cycling adventure: more technical trails are favored, with detours allowed.','山地车冒险：优先选择更具挑战的小径，可接受绕行。','माउंटेन बाइक रोमांच: अधिक तकनीकी पगडंडियों को प्राथमिकता, चक्कर स्वीकार्य।','Ciclismo de montaña: aventura: prioridad a senderos más técnicos; se aceptan desvíos.','جبلية إثارة: تُفضّل الدروب الأكثر تحديًا مع قبول التحويلات.'],
+ ['VTT : priorité forte aux sentiers et RAVeL; les routes de centre-ville sont pénalisées.','Mountain biking: strong preference for trails and greenways; city-center roads are penalized.','山地车：优先小径和绿道；降低市中心道路优先级。','माउंटेन बाइक: पगडंडियों और ग्रीनवे को प्राथमिकता; शहर की सड़कों से बचें।','Ciclismo de montaña: prioridad a senderos y vías verdes; se penalizan las calles céntricas.','جبلية: الأولوية للدروب والمسارات الخضراء؛ تُتجنب طرق وسط المدينة.'],
+ ['Motocross homologuée : priorité maximale aux pistes et chemins moto-accessibles, détour accepté pour éviter les grands axes et les centres-villes.','Road-legal motocross: prioritize motorcycle-accessible tracks and trails; detours are allowed to avoid main roads and city centers.','合法上路的越野摩托：优先摩托可通行的小径和土路，可绕行以避开主干道和市中心。','पंजीकृत मोटोक्रॉस: मोटरसाइकिल के लिए खुले ट्रैक और रास्तों को प्राथमिकता; मुख्य सड़कों और शहरों से बचने हेतु चक्कर संभव।','Motocross homologada: prioridad a caminos accesibles en moto; se permiten desvíos para evitar vías principales y centros urbanos.','موتوكروس مرخصة: الأولوية للمسارات المتاحة للدراجات النارية؛ يُسمح بالتحويلات لتجنب الطرق الرئيسية ومراكز المدن.'],
+ ['La carte utilise les tuiles OpenStreetMap. Le calcul moto passe par Valhalla, un moteur de routage fondé sur les données OSM.','The map uses OpenStreetMap tiles. Motorcycle routes use Valhalla, a routing engine based on OSM data.','地图使用 OpenStreetMap 瓦片。摩托车路线由基于 OSM 数据的 Valhalla 引擎计算。','नक्शा OpenStreetMap टाइल्स का उपयोग करता है। मोटरसाइकिल मार्ग OSM डेटा पर आधारित Valhalla से निकलते हैं।','El mapa usa teselas de OpenStreetMap. Las rutas en moto usan Valhalla, basado en datos OSM.','تستخدم الخريطة مربعات OpenStreetMap. تُحسب مسارات الدراجات النارية عبر Valhalla المبني على بيانات OSM.'],
+ ['Adresse du moteur Valhalla','Valhalla routing server URL','Valhalla 路由服务器地址','Valhalla मार्ग सर्वर पता','Dirección del servidor Valhalla','عنوان خادم Valhalla'],
+ ['Annuler','Cancel','取消','रद्द करें','Cancelar','إلغاء'],['Enregistrer','Save','保存','सहेजें','Guardar','حفظ'],
+ ['Moteur d’itinéraire OSM','OSM routing engine','OSM 路线引擎','OSM मार्ग इंजन','Motor de rutas OSM','محرك توجيه OSM'],
+ ['TRACÉ MANUEL','MANUAL ROUTE','手动路线','मैन्युअल मार्ग','TRAZADO MANUAL','مسار يدوي'],
+ ['Étapes du parcours','Route stops','路线途经点','मार्ग के पड़ाव','Etapas de la ruta','نقاط المسار'],
+ ['Réinitialiser','Reset','重置','रीसेट करें','Restablecer','إعادة تعيين'],
+ ['Démarrer la navigation','Start navigation','开始导航','नेविगेशन शुरू करें','Iniciar navegación','ابدأ التنقل'],
+ ['Aucun trajet à reprendre.','No route to resume.','没有可继续的路线。','फिर से शुरू करने के लिए कोई मार्ग नहीं।','No hay ninguna ruta para reanudar.','لا يوجد مسار لمتابعته.'],
+ ['Navigation terminée.','Navigation ended.','导航结束。','नेविगेशन समाप्त।','Navegación finalizada.','انتهى التنقل.'],
+ ['Adresse du moteur enregistrée.','Routing server saved.','路线服务器已保存。','मार्ग सर्वर सहेजा गया।','Servidor de rutas guardado.','تم حفظ خادم التوجيه.'],
+ ['Votre itinéraire','Your route','你的路线','आपका मार्ग','Tu ruta','مسارك'],
+ ['Dernière position enregistrée','Last saved position','上次保存的位置','अंतिम सहेजी स्थिति','Última posición guardada','آخر موقع محفوظ'],
+ ['Reprendre le trajet','Resume route','继续路线','मार्ग फिर शुरू करें','Reanudar ruta','استئناف المسار'],
+ ['Départ depuis le point choisi. Touchez la carte pour ajouter les étapes suivantes.','Start at the selected point. Tap the map to add more stops.','从所选点出发。点击地图添加后续途经点。','चुने हुए बिंदु से शुरू करें। अगले पड़ाव जोड़ने के लिए नक्शे पर टैप करें।','Empieza en el punto elegido. Toca el mapa para añadir más etapas.','ابدأ من النقطة المحددة. اضغط على الخريطة لإضافة نقاط أخرى.'],
+ ['Les tronçons suivent les chemins cartographiés entre vos points. Le moteur ne garantit pas les autorisations d’accès ni l’état réel du terrain : vérifiez la signalisation et respectez les propriétés privées.','Segments follow mapped paths between your stops. Routing cannot guarantee access rights or trail conditions: check signs and respect private property.','各路段沿地图标记的道路连接。引擎不保证通行权限或实际路况：请查看标志并尊重私人土地。','खंड आपके बिंदुओं के बीच नक्शे के रास्तों का अनुसरण करते हैं। पहुँच की अनुमति या वास्तविक स्थिति की गारंटी नहीं; संकेत जाँचें और निजी संपत्ति का सम्मान करें।','Los tramos siguen caminos cartografiados. El motor no garantiza permisos ni el estado real del terreno: revisa las señales y respeta la propiedad privada.','تتبع المقاطع الطرق المرسومة بين نقاطك. لا يضمن المحرك حق الدخول أو حالة الطريق؛ تحقق من الإشارات واحترم الملكية الخاصة.'],
+ ['Les données OSM peuvent être incomplètes. Vérifiez la signalisation et les accès réels avant de partir.','OSM data may be incomplete. Check signs and real access before setting off.','OSM 数据可能不完整。出发前请核实标志和实际通行权限。','OSM डेटा अधूरा हो सकता है। निकलने से पहले संकेत और वास्तविक पहुँच जाँचें।','Los datos de OSM pueden estar incompletos. Comprueba las señales y el acceso real antes de salir.','قد تكون بيانات OSM غير مكتملة. تحقق من الإشارات وإمكانية الدخول الفعلية قبل الانطلاق.'],
+ ['La carte utilise les tuiles OpenStreetMap. Le calcul moto passe par Valhalla, un moteur de routage fondé sur les données OSM.','The map uses OpenStreetMap tiles. Motorcycle routes use Valhalla, a routing engine based on OSM data.','地图使用 OpenStreetMap 瓦片。摩托车路线由基于 OSM 数据的 Valhalla 引擎计算。','नक्शा OpenStreetMap टाइल्स का उपयोग करता है। मोटरसाइकिल मार्ग OSM डेटा पर आधारित Valhalla से निकलते हैं।','El mapa usa teselas de OpenStreetMap. Las rutas en moto usan Valhalla, basado en datos OSM.','تستخدم الخريطة مربعات OpenStreetMap. تُحسب مسارات الدراجات النارية عبر Valhalla المبني على بيانات OSM.'],
+ ['Le serveur public est fourni sans garantie de disponibilité. L’attribution OSM reste affichée sur la carte. Les tuiles ne sont pas téléchargées pour un usage hors ligne. Les données d’accès peuvent être incomplètes ou anciennes.','The public server has no uptime guarantee. OSM attribution stays on the map. Tiles are not downloaded for offline use. Access data may be incomplete or outdated.','公共服务器不保证可用性。地图保留 OSM 署名。地图瓦片不会下载供离线使用。通行数据可能不完整或过时。','सार्वजनिक सर्वर की उपलब्धता की गारंटी नहीं। नक्शे पर OSM श्रेय रहता है। ऑफ़लाइन उपयोग के लिए टाइल डाउनलोड नहीं होतीं। पहुँच डेटा अधूरा या पुराना हो सकता है।','El servidor público no garantiza disponibilidad. La atribución OSM permanece en el mapa. No se descargan teselas para uso sin conexión. Los datos de acceso pueden ser incompletos o antiguos.','لا يوجد ضمان لتوفر الخادم العام. سيظل إسناد OSM ظاهرًا. لا تُنزّل الخرائط للاستخدام دون اتصال. قد تكون بيانات الدخول ناقصة أو قديمة.'],
+ ['INFORMATIONS IMPORTANTES','IMPORTANT INFORMATION','重要信息','महत्वपूर्ण जानकारी','INFORMACIÓN IMPORTANTE','معلومات مهمة'],
+ ['VTT, motocross et accès','Trail cycling, motocross & access','山地车、越野摩托与通行','माउंटेन बाइक, मोटोक्रॉस और पहुँच','Ciclismo de montaña, motocross y accesos','الدراجة الجبلية والموتوكروس والدخول'],
+ ['Cross Travel utilise OpenStreetMap et BRouter pour les trajets à vélo. Le mode familial privilégie les chemins faciles et les itinéraires cyclables en évitant les routes autant que possible; le motocross passe par Valhalla et tient compte des accès motorisés connus.','Cross Travel uses OpenStreetMap and BRouter for cycling routes. Family mode favors easy trails and cycle routes while avoiding roads; motocross uses Valhalla and known motor access data.','Cross Travel 使用 OpenStreetMap 和 BRouter 规划自行车路线。家庭模式优先简单小径和自行车路线并尽量避开道路；越野摩托使用 Valhalla 和已知机动车通行数据。','Cross Travel साइकिल मार्गों के लिए OpenStreetMap और BRouter का उपयोग करता है। पारिवारिक मोड आसान रास्तों और साइकिल मार्गों को प्राथमिकता देता है; मोटोक्रॉस Valhalla और ज्ञात मोटर पहुँच डेटा का उपयोग करता है।','Cross Travel usa OpenStreetMap y BRouter para rutas en bici. El modo familiar prioriza caminos fáciles y vías ciclistas evitando carreteras; motocross usa Valhalla y datos de acceso motorizado conocidos.','يستخدم Cross Travel خرائط OpenStreetMap وBRouter لمسارات الدراجات. يفضل الوضع العائلي الطرق السهلة ومسارات الدراجات ويتجنب الطرق؛ يستخدم الموتوكروس Valhalla وبيانات الدخول المعروفة للمركبات.'],
+ ['Pour le mode familial, les préférences de calcul favorisent les voies cyclables et les chemins faciles, et pénalisent fortement les routes; des routes peuvent rester présentes si les données ne proposent pas d’alternative praticable. Vérifiez la surface et les accès sur place.','Family routing favors cycle paths and easy trails and strongly penalizes roads. Roads may still appear if no practical alternative is mapped. Check surfaces and access on site.','家庭路线优先自行车道和简单小径，大幅降低道路优先级；若地图没有可行替代路线，仍可能经过道路。请现场检查路面和通行权限。','पारिवारिक मार्ग साइकिल पथ और आसान रास्तों को प्राथमिकता देता है और सड़कों से बचता है। विकल्प न होने पर सड़कें आ सकती हैं। सतह और पहुँच मौके पर जाँचें।','El modo familiar prioriza vías ciclistas y caminos fáciles y penaliza mucho las carreteras. Pueden aparecer si no hay alternativa práctica. Comprueba el terreno y los accesos.','يُفضّل الوضع العائلي مسارات الدراجات والطرق السهلة ويتجنب الطرق بشدة. قد تظهر الطرق عند غياب بديل مناسب. تحقق من السطح وإمكانية الدخول ميدانيًا.'],
+ ['Le guidage vocal utilise la synthèse vocale de votre navigateur et la voix française installée sur votre appareil. Wikiloc est accessible en recherche externe; l’application ne télécharge pas ses traces. Un itinéraire GPX peut être importé dans OsmAnd. Les cartes et le calcul demandent une connexion. Le GPS et le maintien de l’écran dépendent de l’appareil et du navigateur. Ne manipulez pas l’écran en roulant.','Voice guidance uses your browser’s speech synthesis and installed voice. Wikiloc searches open externally; this app does not download its tracks. GPX routes can be imported into OsmAnd. Maps and routing need a connection. GPS and screen wake depend on your device and browser. Do not use the screen while riding.','语音导航使用浏览器语音合成和设备中已安装的语音。Wikiloc 搜索会在外部打开；应用不会下载其轨迹。GPX 路线可导入 OsmAnd。地图和路线规划需要网络。GPS 和屏幕常亮取决于设备与浏览器。骑行时请勿操作屏幕。','वॉइस निर्देश ब्राउज़र के वाक्-संश्लेषण का उपयोग करते हैं। Wikiloc खोज बाहर खुलेगी; ऐप ट्रैक डाउनलोड नहीं करता। GPX मार्ग OsmAnd में आयात किए जा सकते हैं। नक्शे और मार्ग के लिए इंटरनेट चाहिए। सवारी करते समय स्क्रीन न चलाएँ।','La guía por voz usa la síntesis del navegador. Las búsquedas de Wikiloc se abren fuera; la app no descarga sus trazas. Los GPX se pueden importar en OsmAnd. Mapas y rutas requieren conexión. No manipules la pantalla al circular.','يستخدم التوجيه الصوتي نطق المتصفح. تُفتح عمليات بحث Wikiloc خارجيًا ولا ينزّل التطبيق مساراتها. يمكن استيراد GPX إلى OsmAnd. تحتاج الخرائط والتوجيه إلى اتصال. لا تستخدم الشاشة أثناء القيادة.'],
+ ['Carte normale','Street map','普通地图','सामान्य नक्शा','Mapa normal','خريطة عادية'],
+ ['Départ placé sur la carte. Utilisez ⌖ pour choisir précisément chaque point.','Start placed. Use ⌖ to position each point precisely.','出发点已放置。使用 ⌖ 精确选择位置。','प्रस्थान रखा गया। हर बिंदु की सही जगह के लिए ⌖ दबाएँ।','Salida colocada. Usa ⌖ para precisar cada punto.','تم تحديد الانطلاق. استخدم ⌖ لضبط كل نقطة بدقة.'],
+ ['Arrivée placée. Utilisez ⌖ pour choisir précisément chaque point.','Finish placed. Use ⌖ to position each point precisely.','终点已放置。使用 ⌖ 精确选择位置。','आगमन रखा गया। हर बिंदु की सही जगह के लिए ⌖ दबाएँ।','Llegada colocada. Usa ⌖ para precisar cada punto.','تم تحديد الوصول. استخدم ⌖ لضبط كل نقطة بدقة.'],
+ ['Arrivée placée sur la carte.','Finish placed on the map.','已在地图上放置终点。','नक्शे पर आगमन रखा गया।','Llegada colocada en el mapa.','تم تحديد الوصول على الخريطة.'],
+ ['Départ placé sur la carte.','Start placed on the map.','已在地图上放置出发点。','नक्शे पर प्रस्थान रखा गया।','Salida colocada en el mapa.','تم تحديد الانطلاق على الخريطة.'],
+ ['Voix coupée','Voice off','语音已关闭','आवाज़ बंद','Voz desactivada','الصوت متوقف'],
+ ['Fermer','Close','关闭','बंद करें','Cerrar','إغلاق'],
+ ['Paramètres','Settings','设置','सेटिंग्स','Ajustes','الإعدادات'],
+ ['Supprimer','Delete','删除','हटाएँ','Eliminar','حذف'],
+ ['VTT · GPS ACTIF','TRAIL CYCLING · GPS ACTIVE','山地车 · GPS 已开启','माउंटेन बाइक · GPS सक्रिय','BICI DE MONTAÑA · GPS ACTIVO','جبلية · GPS نشط'],
+ ['OSM · VÉLO FAMILIAL · RAPIDE','OSM · FAMILY BIKE · FAST','OSM · 家庭骑行 · 快速','OSM · पारिवारिक साइकिल · तेज़','OSM · BICI FAMILIAR · RÁPIDA','OSM · دراجة عائلية · سريع'],
+ ['OSM · RAVeL & CHEMINS','OSM · GREENWAYS & TRAILS','OSM · 绿道与小径','OSM · ग्रीनवे और पगडंडियाँ','OSM · VÍAS VERDES Y CAMINOS','OSM · المسارات الخضراء والدروب'],
+ ['OSM · VÉLO DE ROUTE · RAPIDE','OSM · ROAD BIKE · FAST','OSM · 公路骑行 · 快速','OSM · रोड साइकिल · तेज़','OSM · BICI DE CARRETERA · RÁPIDA','OSM · دراجة طريق · سريع'],
+ ['OSM · ROUTE VTT','OSM · TRAIL CYCLING ROUTE','OSM · 山地车路线','OSM · माउंटेन बाइक मार्ग','OSM · RUTA DE MONTAÑA','OSM · مسار دراجة جبلية'],
+ ['OSM · MOTO · PETITES ROUTES','OSM · MOTO · QUIET ROADS','OSM · 摩托 · 小路','OSM · मोटो · शांत सड़कें','OSM · MOTO · CARRETERAS TRANQUILAS','OSM · دراجة نارية · طرق هادئة'],
+ ['Carte normale','Street map','普通地图','सामान्य नक्शा','Mapa normal','خريطة عادية'],
+ ['Imagerie satellite activée.','Satellite imagery enabled.','卫星影像已启用。','उपग्रह दृश्य चालू।','Imagen satelital activada.','تم تفعيل صور الأقمار الصناعية.'],
+ ['Satellite indisponible : retour à la carte OSM.','Satellite unavailable: returning to the OSM map.','卫星图不可用：返回 OSM 地图。','उपग्रह उपलब्ध नहीं: OSM नक्शे पर लौट रहे हैं।','Satélite no disponible: se vuelve al mapa OSM.','القمر الصناعي غير متاح: العودة إلى خريطة OSM.'],
+ ['VÉLO FAMILIAL · GPS ACTIF','FAMILY BIKE · GPS ACTIVE','家庭骑行 · GPS 已开启','पारिवारिक साइकिल · GPS सक्रिय','BICI FAMILIAR · GPS ACTIVO','دراجة عائلية · GPS نشط'],
+ ['VÉLO DE ROUTE · GPS ACTIF','ROAD BIKE · GPS ACTIVE','公路骑行 · GPS 已开启','रोड साइकिल · GPS सक्रिय','BICI DE CARRETERA · GPS ACTIVO','دراجة طريق · GPS نشط'],
+ ['MOTO · GPS ACTIF','MOTO · GPS ACTIVE','摩托 · GPS 已开启','मोटो · GPS सक्रिय','MOTO · GPS ACTIVO','دراجة نارية · GPS نشط'],
+ ['La synthèse vocale n’est pas disponible dans ce navigateur.','Speech synthesis is not available in this browser.','此浏览器不支持语音合成。','इस ब्राउज़र में वाक्-संश्लेषण उपलब्ध नहीं है।','La síntesis de voz no está disponible en este navegador.','ميزة تحويل النص إلى كلام غير متاحة في هذا المتصفح.'],
+ ['Écart détecté. Recalcul du parcours.','Off route. Recalculating.','偏离路线，正在重新规划。','मार्ग से हटे। फिर से गणना हो रही है।','Fuera de ruta. Recalculando.','خارج المسار. جارٍ إعادة الحساب.']
+ ,
+ ['TRAJET EN COURS','ROUTE IN PROGRESS','路线进行中','मार्ग जारी है','RUTA EN CURSO','المسار قيد التنفيذ'],
+ ['VTT · OSM','TRAIL CYCLING · OSM','山地车 · OSM','माउंटेन बाइक · OSM','CICLISMO DE MONTAÑA · OSM','دراجة جبلية · OSM'],
+ ['VTT : itinéraires cyclables, sentiers et pistes; les routes fréquentées sont pénalisées quand une alternative existe. Vérifiez le niveau technique et l’accès.','Trail cycling: cycle routes, paths and tracks; busy roads are penalized when an alternative exists. Check technical difficulty and access.','山地车路线：自行车道、小径与山道；有替代路线时会降低繁忙道路优先级。请确认难度和通行权限。','माउंटेन बाइक: साइकिल मार्ग, रास्ते और ट्रैक; विकल्प होने पर व्यस्त सड़कों से बचें। कठिनाई और पहुँच जाँचें।','Ciclismo de montaña: vías ciclistas, caminos y senderos; se penalizan carreteras concurridas si hay alternativa. Comprueba dificultad y acceso.','دراجة جبلية: مسارات الدراجات والدروب؛ تُتجنب الطرق المزدحمة عند وجود بديل. تحقق من الصعوبة وإمكانية الدخول.'],
+ ['Carte OpenStreetMap. Le vélo de route privilégie un trajet rapide sur chaussée adaptée et pistes cyclables. La moto favorise les routes secondaires et évite les grands axes selon les accès moto cartographiés.','OpenStreetMap. Road cycling favors a fast route on suitable roads and cycle paths. Motorcycles favor secondary roads and avoid main roads where mapped access allows.','OpenStreetMap 地图。公路骑行优先选择适宜道路和自行车道的快速路线。摩托车尽量使用支路并根据地图通行信息避开主干道。','OpenStreetMap नक्शा। रोड साइकिल उपयुक्त सड़कों और साइकिल पथों पर तेज़ मार्ग चुनती है। मोटरसाइकिल मुख्य सड़कों से बचती है।','OpenStreetMap. El ciclismo de carretera prioriza rutas rápidas por vías adecuadas y carriles bici. La moto favorece vías secundarias y evita las principales según el acceso cartografiado.','خريطة OpenStreetMap. تفضّل دراجة الطريق المسارات السريعة المناسبة. تفضّل الدراجة النارية الطرق الثانوية وتتجنب الرئيسية وفق بيانات الدخول.'],
+ ['Exporter GPX','Export GPX','导出 GPX','GPX निर्यात','Exportar GPX','تصدير GPX'],
+ ['Étape —','Step —','步骤 —','चरण —','Etapa —','المرحلة —'],
+ ['COLLECTION','COLLECTION','收藏','संग्रह','COLECCIÓN','المجموعة'],
+ ['Touchez la carte pour placer le','Tap the map to place the','点击地图放置','नक्शे पर रखने के लिए टैप करें','Toca el mapa para colocar la','اضغط على الخريطة لوضع'],
+ ['départ','start','出发点','प्रस्थान','salida','الانطلاق']
+];
+const UI_TRANSLATIONS = Object.fromEntries(I18N_ROWS.map(row => [row[0], {en: row[1], zh: row[2], hi: row[3], es: row[4], ar: row[5]}]));
+const translationTextNodes = new WeakMap();
+const translationAttributes = new WeakMap();
+let languageObserver = null;
+function localizedText(source, language = state.language) {
+  if (language === 'fr') return source;
+  const exact = UI_TRANSLATIONS[source];
+  if (exact && exact[language]) return exact[language];
+  if (source.startsWith('Étape ')) {
+    const parts = source.slice(6).split(' / ');
+    const prefixes = {en: 'Step ', zh: '步骤 ', hi: 'चरण ', es: 'Etapa ', ar: 'المرحلة '};
+    if (parts.every(part => /^[0-9]+$/.test(part))) return prefixes[language] + parts.join(' / ');
+  }
+  const nextSuffix = ' avant la prochaine étape';
+  if (source.endsWith(nextSuffix)) {
+    const tail = {en: ' before next step', zh: ' 后到达下一点', hi: ' अगले पड़ाव तक', es: ' para la siguiente etapa', ar: ' حتى الخطوة التالية'}[language];
+    return source.slice(0, -nextSuffix.length) + tail;
+  }
+  const averagePrefix = 'Moyenne roulée · ';
+  if (source.startsWith(averagePrefix)) return localizedText('Moyenne roulée', language) + ' · ' + source.slice(averagePrefix.length);
+  if (source === 'Écart détecté. Recalcul du parcours.') return {en: 'Off route. Recalculating.', zh: '偏离路线，正在重新规划。', hi: 'मार्ग से हटे। फिर से गणना हो रही है।', es: 'Fuera de ruta. Recalculando.', ar: 'خارج المسار. جارٍ إعادة الحساب.'}[language];
+  return source;
+}
+function translateTextNode(node) {
+  const current = node.nodeValue;
+  if (!current || !current.trim() || /^(SCRIPT|STYLE|NOSCRIPT)$/.test(node.parentElement?.tagName || '')) return;
+  const previous = translationTextNodes.get(node);
+  const source = previous && current === previous.output ? previous.source : current;
+  const trimmed = source.trim();
+  const start = source.indexOf(trimmed);
+  const output = source.slice(0, start) + localizedText(trimmed) + source.slice(start + trimmed.length);
+  translationTextNodes.set(node, {source, output});
+  if (current !== output) node.nodeValue = output;
+}
+function translateElementAttributes(element) {
+  for (const attr of ['aria-label', 'title', 'placeholder']) {
+    if (!element.hasAttribute?.(attr)) continue;
+    const current = element.getAttribute(attr);
+    const previous = translationAttributes.get(element)?.[attr];
+    const source = previous && current === previous.output ? previous.source : current;
+    const output = localizedText(source);
+    const records = translationAttributes.get(element) || {};
+    records[attr] = {source, output}; translationAttributes.set(element, records);
+    if (current !== output) element.setAttribute(attr, output);
+  }
+}
+function translateSubtree(root = document.body) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let node;
+  while ((node = walker.nextNode())) translateTextNode(node);
+  if (root.nodeType === 1) translateElementAttributes(root);
+  root.querySelectorAll?.('*').forEach(translateElementAttributes);
+}
+function applyLanguage() {
+  state.language = ['fr', 'en', 'zh', 'hi', 'es', 'ar'].includes(state.language) ? state.language : 'fr';
+  document.documentElement.lang = LANGUAGE_LOCALES[state.language];
+  document.documentElement.dir = state.language === 'ar' ? 'rtl' : 'ltr';
+  $('#language-select').value = state.language;
+  $('#units-select').value = state.units;
+  $('#nav-speed-unit').textContent = localizedText(state.units === 'imperial' ? 'mph' : 'km/h');
+  $('#units-example').textContent = localizedText(state.units === 'imperial' ? 'Ex. 3,1 mi et 1 640 ft' : 'Ex. 5 km et 500 m');
+  document.title = localizedText('Cross Travel — vélo familial, VTT & motocross');
+  translateSubtree();
+  if (!languageObserver) {
+    languageObserver = new MutationObserver(records => records.forEach(record => {
+      if (record.type === 'characterData') translateTextNode(record.target);
+      else if (record.type === 'attributes') translateElementAttributes(record.target);
+      else record.addedNodes.forEach(node => {
+        if (node.nodeType === 3) translateTextNode(node);
+        else if (node.nodeType === 1) translateSubtree(node);
+      });
+    }));
+    languageObserver.observe(document.body, {subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['aria-label', 'title', 'placeholder']});
+  }
+}
+function updateLanguage(language) {
+  state.language = ['fr', 'en', 'zh', 'hi', 'es', 'ar'].includes(language) ? language : 'fr';
+  localStorage.setItem('ct_language', state.language);
+  applyLanguage();
+  updateUnits(state.units);
+}
+function updateUnits(units) {
+  state.units = units === 'imperial' ? 'imperial' : 'metric';
+  localStorage.setItem('ct_units', state.units);
+  $('#units-select').value = state.units;
+  $('#units-example').textContent = localizedText(state.units === 'imperial' ? 'Ex. 3,1 mi et 1 640 ft' : 'Ex. 5 km et 500 m');
+  if (state.route) $('#route-distance').textContent = formatDistance(state.route.distanceMeters);
+  $('#nav-speed').textContent = String(Math.round(state.units === 'imperial' ? state.currentSpeedKmh / 1.609344 : state.currentSpeedKmh));
+  $('#nav-speed-unit').textContent = localizedText(state.units === 'imperial' ? 'mph' : 'km/h');
+  const averageKmh = state.movingSeconds >= 20 && state.movingDistanceMeters >= 60 ? state.movingDistanceMeters / state.movingSeconds * 3.6 : 0;
+  const averageDisplay = state.units === 'imperial' ? averageKmh / 1.609344 : averageKmh;
+  $('#nav-speed-average').textContent = averageKmh ? localizedText('Moyenne roulée') + ' · ' + Math.round(averageDisplay) + (state.units === 'imperial' ? ' mph' : ' km/h') : localizedText('Analyse de votre vitesse…');
+  $('#nav-travelled').textContent = formatDistance(state.distanceTravelledMeters);
+  $('#nav-remaining').textContent = formatDistance(Math.max(0, (state.route?.distanceMeters || 0) - Math.max(0, state.distanceTravelledMeters - state.routeStartDistanceTravelled)));
+  if (state.manualPoints.length && state.map) renderManualTrack();
+  renderSaved();
+  renderResumeTripCard();
+}
+
 function routePointMarkerIcon(asset) {
   return L.divIcon({
     className: 'start-logo-shell',
     html: `<span class="start-logo-marker"><img src="${asset}" alt="" /></span>`,
-    iconSize: [82, 42], iconAnchor: [41, 21]
+    iconSize: [60, 32], iconAnchor: [30, 16]
   });
 }
 
 function startMarkerIcon() { return routePointMarkerIcon('assets/start-flag.svg'); }
 function finishMarkerIcon() { return routePointMarkerIcon('assets/finish-flag.svg'); }
+function navigationVehicleAsset() {
+  return ({family: 'assets/velo-familial.webp', road: 'assets/velo-route.webp', vtt: 'assets/vtt-dynamique.webp', moto: 'assets/motocross-calme.webp'})[state.mode] || 'assets/vtt-dynamique.webp';
+}
+function navigationVehicleClass() { return ({family: 'family', road: 'road', vtt: 'vtt', moto: 'moto'})[state.mode] || 'vtt'; }
+function createNavigationVehicleMarker(point, heading) {
+  const className = navigationVehicleClass();
+  const angle = ((heading - 90) % 360 + 360) % 360;
+  const icon = L.divIcon({
+    className: 'nav-vehicle-shell',
+    html: '<span class="nav-vehicle nav-vehicle-' + className + '" style="--vehicle-bearing:' + angle + 'deg"><img class="nav-vehicle-image" src="' + navigationVehicleAsset() + '" alt="' + className + '" /></span>',
+    iconSize: [50, 50], iconAnchor: [25, 25]
+  });
+  return L.marker([point.lat, point.lon], {icon, interactive: false, keyboard: false, zIndexOffset: 1500}).addTo(state.map);
+}
+function updateNavigationVehicleMarker(point, heading) {
+  if (!state.navigationMarker || !state.map.hasLayer(state.navigationMarker)) {
+    state.navigationMarker = createNavigationVehicleMarker(point, heading);
+  } else {
+    state.navigationMarker.setLatLng([point.lat, point.lon]);
+  }
+  const icon = state.navigationMarker.getElement()?.querySelector('.nav-vehicle');
+  if (icon) {
+    icon.style.setProperty('--vehicle-bearing', (((heading - 90) % 360 + 360) % 360) + 'deg');
+    icon.classList.toggle('is-moving', state.currentSpeedKmh >= 1.5);
+  }
+}
 
 function createStartMarker(point) {
   return L.marker([point.lat, point.lon], {
@@ -773,7 +1025,7 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
         costing_options: state.mode === 'moto'
           ? {motorcycle: {use_highways: 0, use_trails: 1, use_tracks: 1, use_distance: 0.9, top_speed: 30, speed_penalty_factor: 0.5, use_tolls: 0, use_living_streets: 0}}
           : {bicycle: {bicycle_type: 'road', cycling_speed: 25, use_roads: 1, use_hills: 1, use_ferry: 0.3, use_living_streets: 0, avoid_bad_surfaces: 0.85}},
-        directions_options: {units: 'kilometers', language: 'fr-FR'},
+        directions_options: {units: 'kilometers', language: state.language === 'fr' ? 'fr-FR' : (LANGUAGE_LOCALES[state.language] || 'en-US')},
         shape_format: 'geojson'
       };
       const routeHeaders = {'Content-Type': 'application/json', 'X-Client-Id': 'cross-travel (github.com/kgjames26/cross-travel)'};
@@ -882,8 +1134,9 @@ function speakText(message) {
   if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) return;
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(message);
-  utterance.lang = 'fr-FR'; utterance.rate = 0.96; utterance.pitch = 1; utterance.volume = 1;
-  const voice = window.speechSynthesis.getVoices().find(item => item.lang?.toLowerCase().startsWith('fr'));
+  utterance.lang = LANGUAGE_LOCALES[state.language] || 'fr-BE'; utterance.rate = 0.96; utterance.pitch = 1; utterance.volume = 1;
+  const voicePrefix = utterance.lang.toLowerCase().split('-')[0];
+  const voice = window.speechSynthesis.getVoices().find(item => item.lang?.toLowerCase().startsWith(voicePrefix));
   if (voice) utterance.voice = voice;
   window.speechSynthesis.speak(utterance);
 }
@@ -926,21 +1179,58 @@ function offsetPointMeters(origin, distanceMeters, bearingDegrees) {
   return [lat2 * 180 / Math.PI, lon2 * 180 / Math.PI];
 }
 
-function nearestPathProgress(point) {
-  const path = state.route?.path || [];
-  if (!path.length) return 0;
-  let bestDistance = Infinity, bestIndex = 0, total = 0, bestProgress = 0;
-  const distances = [0];
-  for (let i = 1; i < path.length; i++) distances[i] = distances[i - 1] + L.latLng(path[i - 1]).distanceTo(L.latLng(path[i]));
-  for (let i = 0; i < path.length; i++) {
-    const distance = L.latLng(path[i]).distanceTo([point.lat, point.lon]);
-    if (distance < bestDistance) { bestDistance = distance; bestIndex = i; }
-  }
-  total = distances.at(-1) || 1;
-  bestProgress = distances[bestIndex] / total;
-  return bestProgress;
+function routeCoordinate(value) {
+  return Array.isArray(value) ? {lat: Number(value[0]), lon: Number(value[1])} : {lat: Number(value.lat), lon: Number(value.lon)};
 }
-
+function nearestRouteProjection(point, minimumProgress = 0) {
+  const path = state.route?.path || [];
+  if (path.length < 2) return null;
+  const coordinates = path.map(routeCoordinate);
+  const lengths = [0];
+  for (let i = 1; i < coordinates.length; i++) lengths[i] = lengths[i - 1] + state.map.distance([coordinates[i - 1].lat, coordinates[i - 1].lon], [coordinates[i].lat, coordinates[i].lon]);
+  const total = lengths.at(-1) || 1;
+  let best = null;
+  const minProgress = Math.max(0, Number(minimumProgress) || 0);
+  for (let i = 0; i < coordinates.length - 1; i++) {
+    const from = coordinates[i], to = coordinates[i + 1];
+    const meanLat = ((from.lat + to.lat + point.lat) / 3) * Math.PI / 180;
+    const scaleX = 111320 * Math.cos(meanLat), scaleY = 110540;
+    const dx = (to.lon - from.lon) * scaleX, dy = (to.lat - from.lat) * scaleY;
+    const px = (point.lon - from.lon) * scaleX, py = (point.lat - from.lat) * scaleY;
+    const lengthSquared = dx * dx + dy * dy;
+    const t = lengthSquared ? Math.max(0, Math.min(1, (px * dx + py * dy) / lengthSquared)) : 0;
+    const snapped = {lat: from.lat + (to.lat - from.lat) * t, lon: from.lon + (to.lon - from.lon) * t};
+    const segmentLength = lengths[i + 1] - lengths[i];
+    const progress = (lengths[i] + segmentLength * t) / total;
+    if (progress + 0.002 < minProgress) continue;
+    const distance = state.map.distance([snapped.lat, snapped.lon], [point.lat, point.lon]);
+    if (!best || distance < best.distance) best = {...snapped, distance, progress, segmentIndex: i};
+  }
+  if (!best && minProgress > 0) return nearestRouteProjection(point, 0);
+  return best;
+}
+function nearestPathProgress(point) {
+  return nearestRouteProjection(point)?.progress || 0;
+}
+function routeBearingAtPoint(point) {
+  const projection = nearestRouteProjection(point, Math.max(0, state.navigationProgress - 0.01));
+  if (!projection) return state.navigationHeading ?? state.lastMapBearing ?? 0;
+  const path = state.route?.path || [];
+  const from = routeCoordinate(path[projection.segmentIndex]);
+  const to = routeCoordinate(path[projection.segmentIndex + 1]);
+  const radians = Math.PI / 180;
+  const lat1 = from.lat * radians, lat2 = to.lat * radians, deltaLon = (to.lon - from.lon) * radians;
+  const y = Math.sin(deltaLon) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(deltaLon);
+  return (Math.atan2(y, x) / radians + 360) % 360;
+}
+function navigationLetterName(index) {
+  let visibleBefore = 0;
+  for (let i = 0; i < Math.min(index, state.navigationViaPoints.length); i++) {
+    if (!state.navigationViaPoints[i].hidden) visibleBefore++;
+  }
+  return manualStepName(visibleBefore);
+}
 function clearNavigationPointLayers() {
   state.navigationPointLayers.forEach(layer => { if (state.map?.hasLayer(layer)) state.map.removeLayer(layer); });
   state.navigationPointLayers = [];
@@ -955,7 +1245,8 @@ function renderNavigationPoints() {
     state.navigationPointLayers.push(ring, L.marker([point.lat, point.lon], {icon, interactive: false, keyboard: false, zIndexOffset: 1200}));
   });
   state.navigationViaPoints.forEach((item, index) => {
-    const letter = manualStepName(index);
+    if (item.hidden) return;
+    const letter = navigationLetterName(index);
     const icon = L.divIcon({className: 'nav-point-shell', html: `<span class="nav-point-marker nav-point-via">${letter}</span>`, iconSize: [30, 30], iconAnchor: [15, 15]});
     state.navigationPointLayers.push(L.marker([item.lat, item.lon], {icon, interactive: false, keyboard: false, zIndexOffset: 1100}));
   });
@@ -964,7 +1255,7 @@ function renderNavigationPoints() {
     const coords = [[draft.start.lat, draft.start.lon], ...draft.points.map(item => [item.lat, item.lon])];
     if (coords.length > 1) state.navigationPointLayers.push(L.polyline(coords, {color: '#fff', weight: 5, opacity: .92, dashArray: '6 7', interactive: false}));
     draft.points.forEach((item, index) => {
-      const letter = manualStepName(draft.startViaIndex + index + 1);
+      const letter = navigationLetterName(draft.startViaIndex + index + 1);
       const icon = L.divIcon({className: 'nav-point-shell', html: `<span class="nav-point-marker nav-point-draft">${letter}</span>`, iconSize: [30, 30], iconAnchor: [15, 15]});
       state.navigationPointLayers.push(L.marker([item.lat, item.lon], {icon, interactive: false, keyboard: false, zIndexOffset: 1250}));
     });
@@ -974,10 +1265,10 @@ function renderNavigationPoints() {
     detourStatus.classList.toggle('hidden', !state.navigationDetour);
     if (state.navigationDetour) {
       const draft = state.navigationDetour;
-      const startName = draft.startViaIndex >= 0 ? manualStepName(draft.startViaIndex) : 'Départ';
+      const startName = draft.startViaIndex >= 0 ? navigationLetterName(draft.startViaIndex) : 'Départ';
       $('#nav-detour-copy').textContent = draft.calculating
         ? 'Calcul du détour en cours…'
-        : `Détour depuis ${startName} · ajoutez des points puis touchez une lettre plus loin pour le fermer.`;
+        : `Détour depuis ${startName} · ajoutez des points puis rejoignez une lettre ou le tracé.`;
     }
   }
   state.navigationPointLayers.forEach(layer => layer.addTo(state.map));
@@ -1082,6 +1373,7 @@ async function insertNavigationVia(point) {
 function nearestNavigationViaIndex(point) {
   let bestIndex = -1, bestDistance = Infinity;
   state.navigationViaPoints.forEach((item, index) => {
+    if (item.hidden) return;
     const distance = state.map.distance([item.lat, item.lon], [point.lat, point.lon]);
     if (distance < bestDistance) { bestDistance = distance; bestIndex = index; }
   });
@@ -1094,11 +1386,12 @@ function startNavigationDetour(point) {
   const start = startViaIndex >= 0
     ? {lat: state.navigationViaPoints[startViaIndex].lat, lon: state.navigationViaPoints[startViaIndex].lon}
     : {...(state.lastPosition || state.origin)};
-  state.navigationDetour = {startViaIndex, start, points: [{lat: point.lat, lon: point.lon}], calculating: false};
+  const startProgress = startViaIndex >= 0 ? Number(state.navigationViaPoints[startViaIndex].progress) || state.navigationProgress : state.navigationProgress;
+  state.navigationDetour = {startViaIndex, startProgress, start, points: [{lat: point.lat, lon: point.lon}], calculating: false};
   renderNavigationPoints();
   persistNavigationResume(true);
-  const startName = startViaIndex >= 0 ? manualStepName(startViaIndex) : 'Départ';
-  toast(`Détour commencé depuis ${startName}. Ajoutez des points puis touchez une lettre plus loin pour le fermer.`);
+  const startName = startViaIndex >= 0 ? navigationLetterName(startViaIndex) : 'Départ';
+  toast('Détour commencé depuis ' + startName + '. Ajoutez des points puis rejoignez une lettre ou le tracé pour le fermer.');
 }
 
 function addNavigationDetourPoint(point) {
@@ -1123,18 +1416,19 @@ function cancelNavigationDetour() {
   toast('Détour annulé.');
 }
 
-async function finishNavigationDetour(endViaIndex) {
+async function finishNavigationDetour(endViaIndex, endpointOverride = null) {
   const draft = state.navigationDetour;
   if (!draft || draft.calculating) return;
   const startViaIndex = draft.startViaIndex;
   if (endViaIndex <= startViaIndex) {
-    toast('Fermez le détour sur une lettre située après son point de départ.'); return;
+    toast('Fermez le détour sur une lettre ou le tracé situé après son départ.'); return;
   }
-  const end = endViaIndex < state.navigationViaPoints.length
-    ? state.navigationViaPoints[endViaIndex] : state.destination;
-  if (!end) return;
   const oldVias = state.navigationViaPoints.map(item => ({...item}));
   const oldSegments = [...state.navigationSegments];
+  const isNewRouteJoin = Boolean(endpointOverride);
+  const closesOnVia = !isNewRouteJoin && endViaIndex < oldVias.length;
+  const end = endpointOverride || (closesOnVia ? oldVias[endViaIndex] : state.destination);
+  if (!end) return;
   const center = state.map.getCenter(), zoom = state.map.getZoom();
   state.navigationRerouteController?.abort();
   const controller = new AbortController();
@@ -1144,6 +1438,14 @@ async function finishNavigationDetour(endViaIndex) {
   renderNavigationPoints();
   try {
     const targets = [...draft.points, {lat: end.lat, lon: end.lon}];
+    let suffixVias = closesOnVia ? oldVias.slice(endViaIndex) : [];
+    let suffixSegments = oldSegments.slice(endViaIndex + 1);
+    if (isNewRouteJoin) {
+      suffixVias = oldVias.slice(endViaIndex);
+      if (endViaIndex < oldVias.length) targets.push(oldVias[endViaIndex]);
+      else targets.push(state.destination);
+      suffixSegments = endViaIndex < oldVias.length ? oldSegments.slice(endViaIndex + 1) : [];
+    }
     const replacementSegments = [];
     let cursor = draft.start;
     for (const target of targets) {
@@ -1152,26 +1454,35 @@ async function finishNavigationDetour(endViaIndex) {
       replacementSegments.push(segment);
       cursor = target;
     }
+    const prefixVias = oldVias.slice(0, startViaIndex + 1);
     state.navigationViaPoints = [
-      ...oldVias.slice(0, startViaIndex + 1),
+      ...prefixVias,
       ...draft.points.map(item => ({...item, progress: 0})),
-      ...oldVias.slice(endViaIndex)
+      ...(isNewRouteJoin ? [{...end, progress: 0}] : []),
+      ...suffixVias
     ];
     state.navigationSegments = [
       ...oldSegments.slice(0, startViaIndex + 1),
       ...replacementSegments,
-      ...oldSegments.slice(endViaIndex + 1)
+      ...suffixSegments
     ];
     refreshViaProgressFromSegments();
     state.navigationDetour = null;
     state.route = combineNavigationSegments(state.navigationSegments);
     state.currentStep = 0;
+    state.navigationProgress = 0;
     state.routeStartDistanceTravelled = state.distanceTravelledMeters;
     drawRoute();
     state.map.setView(center, zoom, {animate: false});
     renderNavigationPoints();
     persistNavigationResume(true);
-    toast(`Détour fermé sur ${endViaIndex < oldVias.length ? manualStepName(endViaIndex) : 'l’arrivée'}.`);
+    if (isNewRouteJoin) {
+      const insertedIndex = state.navigationViaPoints.findIndex(item => state.map.distance([item.lat, item.lon], [end.lat, end.lon]) < 2);
+      toast('Détour refermé sur le tracé. Nouvelle étape ' + navigationLetterName(insertedIndex >= 0 ? insertedIndex : prefixVias.length + draft.points.length) + ' ajoutée.');
+    } else {
+      const closedIndex = closesOnVia ? state.navigationViaPoints.findIndex(item => state.map.distance([item.lat, item.lon], [end.lat, end.lon]) < 2) : -1;
+      toast('Détour fermé sur ' + (closedIndex >= 0 ? navigationLetterName(closedIndex) : 'l’arrivée') + '.');
+    }
   } catch (error) {
     if (controller.signal.aborted || version !== state.navigationRerouteVersion) return;
     state.navigationViaPoints = oldVias;
@@ -1193,52 +1504,59 @@ function handleNavigationMapClick(point) {
     return;
   }
   if (state.navigationDetour) {
-    if (state.navigationDetour.calculating) return;
-    const nearbyViaIndex = state.navigationViaPoints.findIndex(item => state.map.distance([item.lat, item.lon], [point.lat, point.lon]) < 38);
+    const draft = state.navigationDetour;
+    if (draft.calculating) return;
+    const nearbyViaIndex = state.navigationViaPoints.findIndex(item => !item.hidden && state.map.distance([item.lat, item.lon], [point.lat, point.lon]) < 38);
     if (nearbyViaIndex >= 0) {
-      if (nearbyViaIndex > state.navigationDetour.startViaIndex) finishNavigationDetour(nearbyViaIndex);
-      else toast('Touchez une lettre située plus loin pour fermer le détour.');
+      if (nearbyViaIndex > draft.startViaIndex) finishNavigationDetour(nearbyViaIndex);
+      else toast('Touchez une lettre située après le départ du détour.');
       return;
     }
     const nearDestination = state.destination && state.map.distance([state.destination.lat, state.destination.lon], [point.lat, point.lon]) < 38;
-    if (nearDestination && state.navigationViaPoints.length > state.navigationDetour.startViaIndex) {
+    if (nearDestination && state.navigationViaPoints.length > draft.startViaIndex) {
       finishNavigationDetour(state.navigationViaPoints.length);
+      return;
+    }
+    const startProgress = Number.isFinite(draft.startProgress) ? draft.startProgress : state.navigationProgress;
+    const projection = nearestRouteProjection(point, startProgress + 0.002);
+    if (projection && projection.distance <= 55 && projection.progress > startProgress + 0.002) {
+      let insertionIndex = state.navigationViaPoints.findIndex(item => Number(item.progress) > projection.progress + 0.002);
+      if (insertionIndex < 0) insertionIndex = state.navigationViaPoints.length;
+      finishNavigationDetour(insertionIndex, {lat: projection.lat, lon: projection.lon});
       return;
     }
     addNavigationDetourPoint(point);
     return;
   }
-  const nearbyVia = state.navigationViaPoints.findIndex(item => state.map.distance([item.lat, item.lon], [point.lat, point.lon]) < 45);
+  const nearbyVia = state.navigationViaPoints.findIndex(item => !item.hidden && state.map.distance([item.lat, item.lon], [point.lat, point.lon]) < 45);
   if (nearbyVia >= 0) {
     state.navigationViaPoints.splice(nearbyVia, 1);
     syncNavigationRouteEdits();
     recalculateNavigationRoute('Étape supprimée.');
     return;
   }
-  const routePoints = state.routeLayer?.getLatLngs() || [];
-  const onRoute = routePoints.some(item => state.map.distance(item, [point.lat, point.lon]) < 65);
+  const projection = nearestRouteProjection(point);
+  const onRoute = Boolean(projection && projection.distance < 65);
+  const nearestVia = nearestNavigationViaIndex(point);
   const popup = L.popup({closeButton: true, className: 'nav-map-actions', offset: [0, -8]})
     .setLatLng([point.lat, point.lon])
-    .setContent(`<div class="nav-map-action-card"><strong>${onRoute ? 'Créer un détour' : 'Préparer un détour'}</strong>${onRoute ? '<button type="button" data-nav-action="avoid">Interdire ce passage</button>' : ''}<button type="button" data-nav-action="detour">Commencer depuis ${nearestNavigationViaIndex(point) >= 0 ? 'la lettre ' + manualStepName(nearestNavigationViaIndex(point)) : 'le départ'}</button></div>`)
+    .setContent('<div class="nav-map-action-card"><strong>' + (onRoute ? 'Créer un détour' : 'Préparer un détour') + '</strong>' + (onRoute ? '<button type="button" data-nav-action="avoid">Interdire ce passage</button>' : '') + '<button type="button" data-nav-action="detour">Commencer depuis ' + (nearestVia >= 0 ? 'la lettre ' + navigationLetterName(nearestVia) : 'le départ') + '</button></div>')
     .openOn(state.map);
   document.body.classList.add('nav-action-open');
   state.map.once('popupclose', () => document.body.classList.remove('nav-action-open'));
-  {
-    const element = popup.getElement();
-    element?.querySelectorAll('[data-nav-action]').forEach(button => button.addEventListener('click', () => {
-      const action = button.dataset.navAction;
-      if (action === 'avoid' && onRoute) {
-        state.navigationAvoids.push({lat: point.lat, lon: point.lon});
-        syncNavigationRouteEdits();
-        recalculateNavigationRoute('Passage interdit ajouté. Recherche d’un détour.');
-      } else if (action === 'detour') {
-        startNavigationDetour(point);
-      }
-      state.map.closePopup();
-    }));
-  }
+  const element = popup.getElement();
+  element?.querySelectorAll('[data-nav-action]').forEach(button => button.addEventListener('click', () => {
+    const action = button.dataset.navAction;
+    if (action === 'avoid' && onRoute) {
+      state.navigationAvoids.push({lat: point.lat, lon: point.lon});
+      syncNavigationRouteEdits();
+      recalculateNavigationRoute('Passage interdit ajouté. Recherche d’un détour.');
+    } else if (action === 'detour') {
+      startNavigationDetour(point);
+    }
+    state.map.closePopup();
+  }));
 }
-
 function navigationBRouterProfile() {
   if (state.navigationManualRoute) return 'trekking';
   if (state.mode === 'road' || (state.mode === 'family' && state.familyFast)) return 'fastbike-verylowtraffic';
@@ -1270,7 +1588,7 @@ async function requestNavigationSegment(origin, destination, signal) {
   return normalizeBRouter(payload);
 }
 
-async function recalculateNavigationRoute(message = 'Parcours recalculé.') {
+async function recalculateNavigationRoute(message = 'Parcours recalculé.', rejoinNearestRoute = false) {
   if (!state.route || !state.destination || !state.map || !document.body.classList.contains('nav-active')) return;
   state.navigationRerouteController?.abort();
   const controller = new AbortController();
@@ -1278,7 +1596,15 @@ async function recalculateNavigationRoute(message = 'Parcours recalculé.') {
   const version = ++state.navigationRerouteVersion;
   const center = state.map.getCenter(), zoom = state.map.getZoom();
   const origin = state.lastPosition || state.origin;
-  // Repositionne les étapes sur le tracé courant avant de les trier : une nouvelle étape s’insère ainsi entre les deux passages qui l’encadrent.
+  const previousViaPoints = state.navigationViaPoints.map(item => ({...item}));
+  if (rejoinNearestRoute) {
+    const projection = nearestRouteProjection(origin, Math.max(0, state.navigationProgress - 0.015));
+    if (projection) {
+      const laterVias = state.navigationViaPoints.filter(item => !item.hidden && Number(item.progress) > projection.progress + 0.002);
+      state.navigationViaPoints = [{lat: projection.lat, lon: projection.lon, progress: projection.progress, hidden: true}, ...laterVias];
+    }
+  }
+  // Les étapes sont remises en ordre le long du tracé pour garder les segments cohérents.
   state.navigationViaPoints = state.navigationViaPoints.map(item => ({...item, progress: nearestPathProgress(item)})).sort((a, b) => a.progress - b.progress);
   const targets = [...state.navigationViaPoints.map(item => ({lat: item.lat, lon: item.lon})), state.destination];
   try {
@@ -1303,6 +1629,7 @@ async function recalculateNavigationRoute(message = 'Parcours recalculé.') {
     refreshViaProgressFromSegments();
     state.route = combineNavigationSegments(state.navigationSegments);
     state.currentStep = 0;
+    state.navigationProgress = 0;
     state.routeStartDistanceTravelled = state.distanceTravelledMeters;
     drawRoute();
     state.map.setView(center, zoom, {animate: false});
@@ -1312,6 +1639,8 @@ async function recalculateNavigationRoute(message = 'Parcours recalculé.') {
     toast(message);
   } catch (error) {
     if (controller.signal.aborted || version !== state.navigationRerouteVersion) return;
+    state.navigationViaPoints = previousViaPoints;
+    syncNavigationRouteEdits();
     toast('Détour impossible : ' + error.message);
   }
 }
@@ -1341,6 +1670,8 @@ function updateNavigation(position) {
   }
   updateMapBearing(position);
   state.previousGpsSample = {point, time: sampleTime};
+  const routeProjectionNow = nearestRouteProjection(point, Math.max(0, state.navigationProgress - 0.015));
+  if (routeProjectionNow && routeProjectionNow.distance < 180) state.navigationProgress = Math.max(state.navigationProgress, routeProjectionNow.progress);
 
   const steps = state.route.legs[0]?.steps || [];
   let step = currentStep();
@@ -1360,33 +1691,24 @@ function updateNavigation(position) {
   const remainingMeters = Math.max(0, routeMeters - riddenThisRoute);
   const progress = routeMeters ? Math.min(100, Math.round(riddenThisRoute / routeMeters * 100)) : 0;
   $('#nav-progress-bar').style.width = Math.max(5, progress) + '%';
-  $('#nav-speed').textContent = String(Math.round(state.currentSpeedKmh));
+  const displaySpeed = state.units === 'imperial' ? state.currentSpeedKmh / 1.609344 : state.currentSpeedKmh;
+  $('#nav-speed').textContent = String(Math.round(displaySpeed));
+  $('#nav-speed-unit').textContent = localizedText(state.units === 'imperial' ? 'mph' : 'km/h');
   $('#nav-travelled').textContent = formatDistance(state.distanceTravelledMeters);
   $('#nav-remaining').textContent = formatDistance(remainingMeters);
   $('#nav-rider').classList.toggle('is-moving', state.currentSpeedKmh >= 1.5);
   const averageSpeed = state.movingSeconds >= 20 && state.movingDistanceMeters >= 60
     ? state.movingDistanceMeters / state.movingSeconds * 3.6 : 0;
+  const displayAverage = state.units === 'imperial' ? averageSpeed / 1.609344 : averageSpeed;
   $('#nav-speed-average').textContent = averageSpeed
-    ? 'Moyenne roulée · ' + Math.round(averageSpeed) + ' km/h' : 'Analyse de votre vitesse…';
+    ? localizedText('Moyenne roulée') + ' · ' + Math.round(displayAverage) + (state.units === 'imperial' ? ' mph' : ' km/h')
+    : localizedText('Analyse de votre vitesse…');
   $('#nav-arrival').textContent = averageSpeed && remainingMeters > 0
-    ? new Date(sampleTime + remainingMeters / (averageSpeed / 3.6) * 1000).toLocaleTimeString('fr-BE', {hour: '2-digit', minute: '2-digit'})
+    ? new Date(sampleTime + remainingMeters / (averageSpeed / 3.6) * 1000).toLocaleTimeString(LANGUAGE_LOCALES[state.language] || 'fr-BE', {hour: '2-digit', minute: '2-digit'})
     : remainingMeters === 0 ? 'Arrivée' : 'Calcul en cours';
-  $('#nav-gps-status').textContent = (state.currentSpeedKmh >= 1.5 ? 'En mouvement' : 'À l’arrêt') + ' · GPS ±' + Math.round(accuracy) + ' m';
-  const arrowHeading = state.navigationHeading ?? state.lastMapBearing;
-  // Flèche directionnelle évidée, inspirée de l’icône GPS fournie.
-  const arrowPoints = [
-    offsetPointMeters(point, 11.5, arrowHeading),
-    offsetPointMeters(point, 6.7, arrowHeading + 145),
-    offsetPointMeters(point, 2.2, arrowHeading + 180),
-    offsetPointMeters(point, 6.7, arrowHeading + 215)
-  ];
-  const arrowStyle = {
-    color: '#fff', weight: 3,
-    fillColor: getComputedStyle(document.body).getPropertyValue('--mode-accent').trim() || '#86b83e',
-    fillOpacity: .98, opacity: 1, interactive: false
-  };
-  if (state.navigationMarker) state.navigationMarker.setLatLngs(arrowPoints);
-  else state.navigationMarker = L.polygon(arrowPoints, arrowStyle).addTo(state.map);
+  $('#nav-gps-status').textContent = localizedText(state.currentSpeedKmh >= 1.5 ? 'En mouvement' : 'À l’arrêt') + ' · GPS ±' + formatProximity(accuracy);
+  const routeHeading = routeBearingAtPoint(point);
+  updateNavigationVehicleMarker(point, routeHeading);
   const now = Date.now();
   if (state.navigationFollow) {
     // Le zoom automatique ne reprend qu’en suivi GPS, pour laisser le contrôle tactile libre.
@@ -1400,14 +1722,13 @@ function updateNavigation(position) {
     }
     state.map.panTo([point.lat, point.lon], {animate: false});
   }
-  const routePoints = state.routeLayer?.getLatLngs() || [];
-  let nearestRouteDistance = Infinity;
-  const sampleEvery = Math.max(1, Math.floor(routePoints.length / 250));
-  for (let i = 0; i < routePoints.length; i += sampleEvery) nearestRouteDistance = Math.min(nearestRouteDistance, state.map.distance(routePoints[i], [point.lat, point.lon]));
-  if (state.routeLayer && !state.rerouting && now - state.lastRerouteAt > 15000 && nearestRouteDistance > 120) {
+  const closestRouteProjection = nearestRouteProjection(point, Math.max(0, state.navigationProgress - 0.015));
+  const nearestRouteDistance = closestRouteProjection?.distance ?? Infinity;
+  const offRouteThreshold = Math.max(65, accuracy * 2);
+  if (state.routeLayer && !state.navigationDetour && !state.rerouting && now - state.lastRerouteAt > 8000 && nearestRouteDistance > offRouteThreshold) {
     state.rerouting = true; state.lastRerouteAt = now;
     toast('Écart détecté. Recalcul du parcours.');
-    if (document.body.classList.contains('nav-active')) recalculateNavigationRoute('Itinéraire adapté à votre position.');
+    if (document.body.classList.contains('nav-active')) recalculateNavigationRoute('Itinéraire adapté à votre position.', true);
     else calculateRoute(point, state.destination).finally(() => { state.rerouting = false; });
     if (document.body.classList.contains('nav-active')) setTimeout(() => { state.rerouting = false; }, 5000);
   }
@@ -1438,6 +1759,7 @@ async function resumeNavigationFromSnapshot() {
   state.navigationAvoids = snapshot.navigationAvoids || snapshot.route.navigationAvoids || [];
   state.navigationViaPoints = snapshot.navigationViaPoints || snapshot.route.navigationViaPoints || [];
   state.lastPosition = snapshot.lastPosition || snapshot.origin;
+  state.navigationProgress = Number(snapshot.navigationProgress) || 0;
   state.currentStep = Math.max(0, Math.min(Number(snapshot.currentStep) || 0, (state.route.legs?.[0]?.steps?.length || 1) - 1));
   state.distanceTravelledMeters = Number(snapshot.distanceTravelledMeters) || 0;
   state.movingDistanceMeters = Number(snapshot.movingDistanceMeters) || 0;
@@ -1471,6 +1793,7 @@ async function startNavigation(resuming = false) {
   if (!navigator.geolocation) { toast('La géolocalisation n’est pas disponible sur cet appareil.'); return; }
   if (state.manualMode) finishManualMode();
   if (!resuming) {
+    state.navigationProgress = 0;
     state.navigationDetour = null;
     localStorage.removeItem('ct_navigation_resume');
     state.navigationResumeSnapshot = null;
@@ -1525,6 +1848,8 @@ async function stopNavigation() {
   persistNavigationResume(true);
   if (state.watchId !== null) navigator.geolocation.clearWatch(state.watchId);
   state.watchId = null;
+  if (state.navigationMarker && state.map?.hasLayer(state.navigationMarker)) state.map.removeLayer(state.navigationMarker);
+  state.navigationMarker = null;
   document.body.classList.remove('nav-active', 'nav-action-open');
   state.navigationRerouteController?.abort(); state.navigationRerouteController = null; clearNavigationPointLayers();
   if (window.speechSynthesis) window.speechSynthesis.cancel();
@@ -1535,7 +1860,7 @@ async function stopNavigation() {
 }
 
 function savedItem(route, index) {
-  return `<div class="saved-item" data-route-index="${index}" role="button" tabindex="0" aria-label="Charger le trajet ${escapeHtml(route.title)}"><span class="saved-route-icon" aria-hidden="true">⌁</span><div class="saved-route-copy"><strong title="${escapeHtml(route.title)}">${escapeHtml(route.title)}</strong><span>${formatDistance(route.distance || 0)} · ${new Date(route.savedAt).toLocaleDateString('fr-BE')}</span></div><button class="delete-saved" data-delete="${index}" aria-label="Supprimer ${escapeHtml(route.title)}">×</button></div>`;
+  return `<div class="saved-item" data-route-index="${index}" role="button" tabindex="0" aria-label="Charger le trajet ${escapeHtml(route.title)}"><span class="saved-route-icon" aria-hidden="true">⌁</span><div class="saved-route-copy"><strong title="${escapeHtml(route.title)}">${escapeHtml(route.title)}</strong><span>${formatDistance(route.distance || 0)} · ${new Date(route.savedAt).toLocaleDateString(LANGUAGE_LOCALES[state.language] || 'fr-BE')}</span></div><button class="delete-saved" data-delete="${index}" aria-label="Supprimer ${escapeHtml(route.title)}">×</button></div>`;
 }
 
 function loadSavedRoute(index) {
@@ -1686,6 +2011,8 @@ function saveRouterSettings() {
 }
 
 $('#settings-open').addEventListener('click', () => openModal('settings-modal'));
+$('#language-select').addEventListener('change', event => updateLanguage(event.target.value));
+$('#units-select').addEventListener('change', event => updateUnits(event.target.value));
 $('#map-settings').addEventListener('click', initializeMap);
 $('#save-route-server').addEventListener('click', saveRouterSettings);
 $('#route-button').addEventListener('click', () => calculateRoute());
@@ -1747,6 +2074,8 @@ renderSaved();
 setMode(state.mode);
 renderResumeTripCard();
 updateVoiceButton();
+applyLanguage();
+updateUnits(state.units);
 window.addEventListener('pagehide', () => persistNavigationResume(true));
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
 initializeMap();
