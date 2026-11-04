@@ -2110,6 +2110,19 @@ document.addEventListener('visibilitychange', async () => {
 
 const arrivalIntro = $('#arrival-intro');
 if (arrivalIntro) {
+  const split = arrivalIntro.querySelector('.arrival-intro__split');
+  const sourceScene = arrivalIntro.querySelector('.arrival-intro__scene');
+  ['left', 'right'].forEach(side => {
+    const pane = document.createElement('div');
+    pane.className = 'arrival-intro__pane arrival-intro__pane--' + side;
+    const sceneCopy = sourceScene.cloneNode(true);
+    const gradient = sceneCopy.querySelector('linearGradient[id]');
+    const track = sceneCopy.querySelector('.arrival-intro__track path');
+    if (gradient) gradient.id = 'arrival-track-gradient-' + side;
+    if (track) track.setAttribute('stroke', 'url(#arrival-track-gradient-' + side + ')');
+    pane.append(sceneCopy);
+    split.append(pane);
+  });
   const removeArrivalIntro = () => arrivalIntro.remove();
   arrivalIntro.addEventListener('animationend', event => {
     if (event.animationName === 'arrival-intro-exit') removeArrivalIntro();
