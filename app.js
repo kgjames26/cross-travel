@@ -13,7 +13,7 @@ const state = {
   distanceTravelledMeters: 0, movingDistanceMeters: 0, movingSeconds: 0,
   currentSpeedKmh: 0, previousGpsSample: null, routeStartDistanceTravelled: 0, lastHeading: null, lastMapBearing: 0, navigationHeading: null, lastNavigationZoomAt: 0, navigationFollow: true, programmaticNavigationZoom: false,
   searchTimers: {}, searchControllers: {}, suggestions: {origin: [], destination: []},
-  navigationAvoids: [], navigationViaPoints: [], navigationManualRoute: false, navigationPointLayers: [], navigationRerouteController: null, navigationRerouteVersion: 0,
+  navigationAvoids: [], navigationViaPoints: [], navigationSegments: [], navigationManualRoute: false, navigationPointLayers: [], navigationRerouteController: null, navigationRerouteVersion: 0,
   saved: JSON.parse(localStorage.getItem('ct_saved_routes') || '[]')
 };
 
@@ -829,6 +829,93 @@ function syncNavigationRouteEdits() {
   renderNavigationPoints();
 }
 
+function combineNavigationSegments(segments) {
+  const path = [], steps = [];
+  let distanceMeters = 0, durationSeconds = 0;
+  segments.forEach((segment, index) => {
+    if (segment.path?.length) path.push(...(index ? segment.path.slice(1) : segment.path));
+    distanceMeters += Number(segment.distanceMeters) || 0;
+    durationSeconds += Number(segment.durationSeconds) || 0;
+    steps.push(...(segment.legs?.[0]?.steps || []));
+  });
+  return {manual: state.navigationManualRoute, path, distanceMeters, durationSeconds, legs: [{steps}],
+    navigationAvoids: [...state.navigationAvoids], navigationViaPoints: [...state.navigationViaPoints], navigationSegments: segments};
+}
+
+function refreshViaProgressFromSegments() {
+  const lengths = state.navigationSegments.map(segment => Number(segment.distanceMeters) || 0);
+  const total = lengths.reduce((sum, value) => sum + value, 0) || 1;
+  let passed = 0;
+  state.navigationViaPoints = state.navigationViaPoints
+    .map((point, index) => {
+      passed += lengths[index] || 0;
+      return {...point, progress: passed / total};
+    })
+    .sort((a, b) => a.progress - b.progress);
+}
+
+function nearestNavigationSegmentIndex(point) {
+  let bestDistance = Infinity, bestIndex = 0;
+  state.navigationSegments.forEach((segment, index) => {
+    (segment.path || []).forEach(coordinate => {
+      const distance = state.map.distance(coordinate, [point.lat, point.lon]);
+      if (distance < bestDistance) { bestDistance = distance; bestIndex = index; }
+    });
+  });
+  return bestIndex;
+}
+
+async function insertNavigationVia(point) {
+  const previousVias = state.navigationViaPoints.map(item => ({...item}));
+  state.navigationViaPoints = [...state.navigationViaPoints].sort((a, b) => a.progress - b.progress);
+  const progress = nearestPathProgress(point);
+  const index = nearestNavigationSegmentIndex(point);
+  const via = {lat: point.lat, lon: point.lon, progress};
+  const segmentIndex = index;
+  const currentSegment = state.navigationSegments[segmentIndex];
+  if (!currentSegment || state.navigationSegments.length !== state.navigationViaPoints.length + 1) {
+    state.navigationViaPoints.push(via);
+    state.navigationViaPoints.sort((a, b) => a.progress - b.progress);
+    syncNavigationRouteEdits();
+    await recalculateNavigationRoute('Étape ajoutée au parcours.');
+    return;
+  }
+  const start = index > 0
+    ? state.navigationViaPoints[index - 1]
+    : {lat: currentSegment.path[0][0], lon: currentSegment.path[0][1]};
+  const end = index < state.navigationViaPoints.length
+    ? state.navigationViaPoints[index]
+    : state.destination;
+  state.navigationViaPoints.splice(index, 0, via);
+  syncNavigationRouteEdits();
+  state.navigationRerouteController?.abort();
+  const controller = new AbortController();
+  state.navigationRerouteController = controller;
+  const version = ++state.navigationRerouteVersion;
+  const center = state.map.getCenter(), zoom = state.map.getZoom();
+  try {
+    const [toVia, fromVia] = await Promise.all([
+      requestNavigationSegment(start, point, controller.signal),
+      requestNavigationSegment(point, end, controller.signal)
+    ]);
+    if (controller.signal.aborted || version !== state.navigationRerouteVersion) return;
+    state.navigationSegments.splice(segmentIndex, 1, toVia, fromVia);
+    refreshViaProgressFromSegments();
+    state.route = combineNavigationSegments(state.navigationSegments);
+    state.currentStep = 0;
+    state.routeStartDistanceTravelled = state.distanceTravelledMeters;
+    drawRoute();
+    state.map.setView(center, zoom, {animate: false});
+    renderNavigationPoints();
+    toast('Étape ajoutée entre les deux passages voisins.');
+  } catch (error) {
+    if (controller.signal.aborted || version !== state.navigationRerouteVersion) return;
+    state.navigationViaPoints = previousVias;
+    syncNavigationRouteEdits();
+    toast('Impossible de relier les étapes : ' + error.message);
+  }
+}
+
 function handleNavigationMapClick(point) {
   if (!state.route || !state.map) return;
   state.map.closePopup();
@@ -863,10 +950,7 @@ function handleNavigationMapClick(point) {
         syncNavigationRouteEdits();
         recalculateNavigationRoute('Passage interdit ajouté. Recherche d’un détour.');
       } else if (action === 'via') {
-        state.navigationViaPoints.push({lat: point.lat, lon: point.lon, progress: nearestPathProgress(point)});
-        state.navigationViaPoints.sort((a, b) => a.progress - b.progress);
-        syncNavigationRouteEdits();
-        recalculateNavigationRoute('Étape ajoutée au parcours.');
+        insertNavigationVia(point);
       }
       state.map.closePopup();
     }));
@@ -933,7 +1017,9 @@ async function recalculateNavigationRoute(message = 'Parcours recalculé.') {
     });
     if (!steps.length) throw new Error('Le moteur n’a pas fourni d’étapes de navigation.');
     state.origin = origin;
-    state.route = {manual: state.navigationManualRoute, path, distanceMeters, durationSeconds, legs: [{steps}], navigationAvoids: [...state.navigationAvoids], navigationViaPoints: [...state.navigationViaPoints]};
+    state.navigationSegments = routes;
+    refreshViaProgressFromSegments();
+    state.route = combineNavigationSegments(state.navigationSegments);
     state.currentStep = 0;
     state.routeStartDistanceTravelled = state.distanceTravelledMeters;
     drawRoute();
@@ -1049,7 +1135,20 @@ async function startNavigation() {
   if (state.manualMode) finishManualMode();
   state.navigationManualRoute = Boolean(state.route.manual);
   state.navigationAvoids = [...(state.route.navigationAvoids || [])];
-  state.navigationViaPoints = [...(state.route.navigationViaPoints || (state.route.manual ? state.manualPoints.slice(1, -1).map((point, index) => ({...point, progress: (index + 1) / (state.manualPoints.length - 1)})) : []))];
+  state.navigationViaPoints = [...(state.route.navigationViaPoints || (state.route.manual
+    ? state.manualPoints.slice(1, state.manualReturnToStart ? undefined : -1).map((point, index) => ({...point, progress: (index + 1) / Math.max(1, state.manualPoints.length - 1)}))
+    : []))];
+  if (Array.isArray(state.route.navigationSegments) && state.route.navigationSegments.length === state.navigationViaPoints.length + 1) {
+    state.navigationSegments = state.route.navigationSegments;
+  } else if (state.route.manual && state.manualLegs.length === state.navigationViaPoints.length + 1) {
+    state.navigationSegments = state.manualLegs.map((leg, index) => ({
+      path: leg.path, distanceMeters: leg.distanceMeters, durationSeconds: leg.durationSeconds,
+      legs: [{steps: [state.route.legs[0].steps[index]]}]
+    }));
+  } else {
+    state.navigationSegments = [{path: state.route.path, distanceMeters: state.route.distanceMeters, durationSeconds: state.route.durationSeconds, legs: state.route.legs}];
+  }
+  refreshViaProgressFromSegments();
   $('#nav-panel').classList.remove('hidden');
   document.body.classList.add('nav-active');
   state.navigationFollow = true;
