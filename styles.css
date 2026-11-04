@@ -828,3 +828,8 @@ body.nav-action-open .nav-panel{background:rgba(13,22,17,.18);backdrop-filter:no
   .manual-remove-step{width:30px;height:30px}
   .manual-stage-copy strong{font-size:12px}
 }
+
+.manual-return-row{border-style:dashed;border-color:color-mix(in srgb,var(--mode-strong) 35%,#e6ebe4);background:color-mix(in srgb,var(--mode-accent) 12%,#fff)}
+.manual-return-badge{background:var(--mode-strong);color:#fff;font-size:19px}
+.manual-return-toggle{flex:none;min-height:34px;padding:0 11px;border:1px solid var(--mode-strong);border-radius:9px;background:#fff;color:var(--mode-strong);font:700 11px 'DM Sans',sans-serif;cursor:pointer}
+.manual-return-toggle.is-active{background:var(--mode-accent);color:var(--mode-deep,#17221a);border-color:var(--mode-accent)}
