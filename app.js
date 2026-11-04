@@ -137,6 +137,7 @@ function initializeMap() {
   });
   useBasemap(state.mapStyle, false);
   state.map.on('click', event => {
+    if (document.body.classList.contains('nav-active')) return;
     const point = {lat: event.latlng.lat, lon: event.latlng.lng};
     if (state.mapPickTarget) {
       const target = state.mapPickTarget;
@@ -388,7 +389,7 @@ function updateManualModeUI() {
   $('#destination-input').readOnly = state.manualMode;
   $('#use-location').disabled = state.manualMode;
   document.querySelectorAll('[data-pick]').forEach(button => { button.disabled = state.manualMode; });
-  document.querySelectorAll('.mode-button').forEach(button => { button.disabled = state.manualMode; });
+  document.querySelectorAll('.mode-button').forEach(button => { button.disabled = state.manualMode || state.manualPoints.length > 1; });
   $('#route-button').classList.toggle('hidden', state.manualMode);
   $('#api-note').classList.toggle('hidden', state.manualMode || state.manualPoints.length > 1);
   $('#manual-map-hint').classList.toggle('hidden', !state.manualMode);
@@ -492,7 +493,7 @@ function renderManualTrack() {
     const steps = state.manualLegs.map((leg, index) => ({
       instructions: `Suivez le chemin jusqu’à l’étape ${manualStepName(index)}`,
       distanceMeters: leg.distanceMeters,
-      endLocation: {lat: points[index + 1].lat, lon: points[index + 1].lon},
+      endLocation: {lat: leg.path.at(-1)[0], lon: leg.path.at(-1)[1]},
       path: leg.path
     }));
     state.route = {manual: true, path, distanceMeters: total, durationSeconds: total / (speedKmh / 3.6), legs: [{steps}]};
@@ -662,6 +663,7 @@ async function calculateRoute(fromOverride = null, toOverride = null) {
     state.lastSpokenStep = -1;
     state.routeStartDistanceTravelled = state.distanceTravelledMeters;
     state.manualPoints = []; state.manualLegs = [];
+    updateManualModeUI();
     drawRoute(); showRoute();
     $('#route-result').classList.remove('manual-result');
     $('#map-mode-label').textContent = state.mode === 'family' ? state.familyFast ? 'OSM · VÉLO FAMILIAL · RAPIDE' : 'OSM · RAVeL & CHEMINS' : state.mode === 'road' ? 'OSM · VÉLO DE ROUTE · RAPIDE' : state.mode === 'vtt' ? 'OSM · BROUTER · PROFIL VTT' : 'OSM · MOTO · PETITES ROUTES';
@@ -916,7 +918,7 @@ function loadSavedRoute(index) {
     closeModal('saved-modal');
     clearDisplayedRoute();
     updateManualTrack(); updateManualModeUI();
-    if (state.manualLine) state.map.fitBounds(state.manualLine.getBounds(), {padding: [55, 55]});
+    state.map.fitBounds(state.manualPoints.map(point => [point.lat, point.lon]), {padding: [55, 55], maxZoom: 16});
     toast('Tracé manuel chargé.');
     return;
   }
@@ -1021,16 +1023,21 @@ function beginMapPick(target) {
 
 function exportGpx() {
   if (!state.route?.path?.length) { toast('Calculez un itinéraire avant de l’exporter.'); return; }
-  const points = state.route.path.map(([lat, lon]) => `    <trkpt lat="${lat.toFixed(6)}" lon="${lon.toFixed(6)}"></trkpt>`).join('\n');
+  const trackSegments = state.route.manual && state.route.legs?.[0]?.steps?.length
+    ? state.route.legs[0].steps.map(step => step.path).filter(path => path?.length > 1)
+    : [state.route.path];
+  const trackXml = trackSegments.map(segment => {
+    const points = segment.map(([lat, lon]) => `    <trkpt lat="${lat.toFixed(6)}" lon="${lon.toFixed(6)}"></trkpt>`).join('\n');
+    return `  <trkseg>\n${points}\n  </trkseg>`;
+  }).join('\n');
   const modeName = state.mode === 'family' ? 'Vélo familial' : state.mode === 'road' ? 'Vélo de route' : state.mode === 'moto' ? 'Motocross' : 'VTT';
   const name = escapeHtml(`${state.route.manual ? 'Tracé manuel' : modeName} - ${routeLabel()}`);
-  const gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Cross Travel" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>${name}</name><trkseg>\n${points}\n  </trkseg></trk></gpx>`;
+  const gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Cross Travel" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>${name}</name>\n${trackXml}\n</trk></gpx>`;
   const url = URL.createObjectURL(new Blob([gpx], {type: 'application/gpx+xml'}));
   const link = document.createElement('a'); link.href = url; link.download = 'cross-travel.gpx'; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   toast('GPX exporté. Ouvrez le fichier avec OsmAnd pour l’importer.');
 }
-
 function saveRouterSettings() {
   const value = $('#route-server-input').value.trim() || DEFAULT_ROUTER;
   try {
