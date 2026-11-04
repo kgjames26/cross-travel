@@ -1,6 +1,12 @@
 const $ = (selector) => document.querySelector(selector);
 const DEFAULT_ROUTER = 'https://valhalla1.openstreetmap.de/route';
 const BROUTER_URL = 'https://brouter.de/brouter';
+function readNavigationResumeSnapshot() {
+  try {
+    const snapshot = JSON.parse(localStorage.getItem('ct_navigation_resume') || 'null');
+    return snapshot?.route?.path?.length > 1 && snapshot?.origin && snapshot?.destination ? snapshot : null;
+  } catch { return null; }
+}
 const state = {
   map: null, tileLayer: null, streetLayer: null, satelliteLayer: null, mapStyle: localStorage.getItem('ct_map_style') || "osm", satelliteErrors: 0, satelliteLoaded: false, satelliteLoadTimer: null, route: null, routeLayer: null, stepLayers: [], markers: [],
   origin: null, destination: null, currentStep: 0, watchId: null, wakeLock: null,
@@ -14,12 +20,72 @@ const state = {
   currentSpeedKmh: 0, previousGpsSample: null, routeStartDistanceTravelled: 0, lastHeading: null, lastMapBearing: 0, navigationHeading: null, lastNavigationZoomAt: 0, navigationFollow: true, programmaticNavigationZoom: false,
   searchTimers: {}, searchControllers: {}, suggestions: {origin: [], destination: []},
   navigationAvoids: [], navigationViaPoints: [], navigationSegments: [], navigationManualRoute: false, navigationPointLayers: [], navigationRerouteController: null, navigationRerouteVersion: 0,
+  navigationResumeSnapshot: readNavigationResumeSnapshot(), lastResumeSaveAt: 0, manualUndo: null,
   saved: JSON.parse(localStorage.getItem('ct_saved_routes') || '[]')
 };
 
 function toast(message) {
-  const node = $('#toast'); node.textContent = message; node.classList.add('show');
+  const node = $('#toast'); node.textContent = message; node.classList.remove('has-action'); node.classList.add('show');
   clearTimeout(toast.timer); toast.timer = setTimeout(() => node.classList.remove('show'), 3200);
+}
+
+function toastWithAction(message, label, action) {
+  const node = $('#toast');
+  node.replaceChildren(document.createTextNode(message));
+  const button = document.createElement('button');
+  button.type = 'button'; button.className = 'toast-undo-button'; button.textContent = label;
+  button.addEventListener('click', () => { clearTimeout(toast.timer); node.classList.remove('show', 'has-action'); action(); });
+  node.append(button); node.classList.add('show', 'has-action');
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => node.classList.remove('show', 'has-action'), 6500);
+}
+
+function resumeRouteTitle(snapshot) {
+  return snapshot.title || [snapshot.originLabel, snapshot.destinationLabel].filter(Boolean).join(' → ') || 'Votre itinéraire';
+}
+
+function renderResumeTripCard() {
+  const card = $('#resume-trip-card');
+  if (!card) return;
+  const snapshot = state.navigationResumeSnapshot || readNavigationResumeSnapshot();
+  state.navigationResumeSnapshot = snapshot;
+  card.classList.toggle('hidden', !snapshot || document.body.classList.contains('nav-active'));
+  if (!snapshot) return;
+  $('#resume-trip-title').textContent = resumeRouteTitle(snapshot);
+  $('#resume-trip-progress').textContent = `Dernière position enregistrée · ${formatDistance(snapshot.distanceTravelledMeters || 0)} parcourus`;
+}
+
+function persistNavigationResume(force = false) {
+  if (!state.route || !document.body.classList.contains('nav-active')) return;
+  const now = Date.now();
+  if (!force && now - state.lastResumeSaveAt < 5000) return;
+  const compactSteps = steps => (steps || []).map(step => ({
+    instructions: step.instructions, distanceMeters: step.distanceMeters, endLocation: step.endLocation
+  }));
+  const compactSegments = state.navigationSegments.map(segment => ({
+    path: segment.path, distanceMeters: segment.distanceMeters, durationSeconds: segment.durationSeconds,
+    legs: [{steps: compactSteps(segment.legs?.[0]?.steps)}]
+  }));
+  const route = {
+    manual: Boolean(state.route.manual), path: state.route.path, distanceMeters: state.route.distanceMeters,
+    durationSeconds: state.route.durationSeconds, legs: [{steps: compactSteps(state.route.legs?.[0]?.steps)}],
+    navigationAvoids: state.navigationAvoids, navigationViaPoints: state.navigationViaPoints,
+    navigationSegments: compactSegments
+  };
+  const snapshot = {
+    version: 1, savedAt: now, title: [$('#origin-input').value.trim(), $('#destination-input').value.trim()].filter(Boolean).join(' → '),
+    mode: state.mode, familyFast: state.familyFast, seekIntense: state.seekIntense,
+    route, origin: state.origin, destination: state.destination,
+    originLabel: $('#origin-input').value, destinationLabel: $('#destination-input').value,
+    lastPosition: state.lastPosition, currentStep: state.currentStep,
+    distanceTravelledMeters: state.distanceTravelledMeters, movingDistanceMeters: state.movingDistanceMeters,
+    movingSeconds: state.movingSeconds, routeStartDistanceTravelled: state.routeStartDistanceTravelled,
+    manualPoints: state.manualPoints, manualLegs: state.manualLegs, manualReturnToStart: state.manualReturnToStart,
+    navigationHeading: state.navigationHeading, lastSpokenStep: state.lastSpokenStep
+  };
+  try {
+    localStorage.setItem('ct_navigation_resume', JSON.stringify(snapshot));
+    state.navigationResumeSnapshot = snapshot; state.lastResumeSaveAt = now;
+  } catch {}
 }
 function openModal(id) {
   $('#'+id).classList.remove('hidden');
@@ -147,7 +213,10 @@ function initializeMap() {
       toast(`${target === 'origin' ? 'Départ' : 'Arrivée'} placé sur la carte.`);
       return;
     }
-    if (state.manualMode && state.watchId === null) { addManualWaypoint(point); return; }
+    if ((state.manualMode || state.route?.manual) && state.watchId === null) {
+      if (removeManualWaypointAtMap(point)) return;
+      if (state.manualMode) { addManualWaypoint(point); return; }
+    }
     const target = !state.origin ? 'origin' : 'destination';
     setPoint(target, point);
     toast(`${target === 'origin' ? 'Départ' : 'Arrivée'} placé. Utilisez ⌖ pour choisir précisément chaque point.`);
@@ -475,8 +544,7 @@ function renderManualTrack() {
     updateManualTrack();
   });
   $('#manual-stage-list').querySelectorAll('[data-manual-remove]').forEach(button => button.addEventListener('click', () => {
-    state.manualPoints.splice(Number(button.dataset.manualRemove), 1);
-    updateManualTrack();
+    removeManualWaypoint(Number(button.dataset.manualRemove));
   }));
   $('#manual-stage-list').querySelectorAll('[data-move-manual]').forEach(button => button.addEventListener('click', () => {
     const index = Number(button.dataset.moveManual), next = index + Number(button.dataset.direction);
@@ -563,6 +631,7 @@ async function toggleManualMode() {
     state.origin = origin;
     const resumeTrack = Boolean(state.manualPoints.length > 1 && state.manualLegs.length === manualExpectedLegCount());
     if (!resumeTrack) {
+      state.manualUndo = null;
       clearDisplayedRoute(); state.destination = null; state.manualReturnToStart = false;
       $('#destination-input').value = ''; state.manualPoints = [origin]; state.manualLegs = []; state.currentStep = 0;
     } else if (state.manualPoints[0].lat !== origin.lat || state.manualPoints[0].lon !== origin.lon) {
@@ -590,6 +659,7 @@ function resetManualTrack() {
   if (state.manualController) state.manualController.abort();
   clearDisplayedRoute();
   state.destination = null; $('#destination-input').value = ''; state.currentStep = 0;
+  state.manualUndo = null;
   state.manualReturnToStart = false;
   state.manualPoints = state.origin ? [state.origin] : [];
   state.manualLegs = [];
@@ -600,6 +670,33 @@ function resetManualTrack() {
     $('#export-manual-gpx').disabled = true;
     updateManualModeUI();
   }
+}
+
+function removeManualWaypointAtMap(point) {
+  let nearestIndex = -1, nearestDistance = Infinity;
+  for (let i = 1; i < state.manualPoints.length; i++) {
+    const candidate = state.manualPoints[i];
+    const distance = state.map.distance([candidate.lat, candidate.lon], [point.lat, point.lon]);
+    if (distance < nearestDistance) { nearestDistance = distance; nearestIndex = i; }
+  }
+  if (nearestIndex < 0 || nearestDistance > 15) return false;
+  removeManualWaypoint(nearestIndex);
+  return true;
+}
+
+function removeManualWaypoint(index) {
+  if (index < 1 || index >= state.manualPoints.length) return;
+  const point = state.manualPoints.splice(index, 1)[0];
+  const undo = {point, index, time: Date.now()};
+  state.manualUndo = undo;
+  updateManualTrack();
+  toastWithAction('Point de passage supprimé.', 'Annuler', () => {
+    if (state.manualUndo !== undo) return;
+    state.manualPoints.splice(Math.min(index, state.manualPoints.length), 0, point);
+    state.manualUndo = null;
+    updateManualTrack();
+    toast('Suppression annulée.');
+  });
 }
 
 function addManualWaypoint(point) {
@@ -719,7 +816,7 @@ function drawRoute() {
     if (point) state.markers.push(L.circleMarker([point.lat, point.lon], {radius: 7, color: '#fff', weight: 3, fillColor: '#80a943', fillOpacity: 1}).addTo(state.map));
   }
   (state.route.legs[0]?.steps || []).forEach(step => {
-    if (step.path.length > 1) state.stepLayers.push(L.polyline(step.path, {color: themeStep, weight: 3, opacity: .5, dashArray: '5 7'}).addTo(state.map));
+    if (step.path?.length > 1) state.stepLayers.push(L.polyline(step.path, {color: themeStep, weight: 3, opacity: .5, dashArray: '5 7'}).addTo(state.map));
   });
 }
 
@@ -907,6 +1004,7 @@ async function insertNavigationVia(point) {
     drawRoute();
     state.map.setView(center, zoom, {animate: false});
     renderNavigationPoints();
+    persistNavigationResume(true);
     toast('Étape ajoutée entre les deux passages voisins.');
   } catch (error) {
     if (controller.signal.aborted || version !== state.navigationRerouteVersion) return;
@@ -1026,6 +1124,7 @@ async function recalculateNavigationRoute(message = 'Parcours recalculé.') {
     state.map.setView(center, zoom, {animate: false});
     renderNavigationPoints();
     updateNavigation({coords: {latitude: origin.lat, longitude: origin.lon, accuracy: 10, speed: 0}, timestamp: Date.now()});
+    persistNavigationResume(true);
     toast(message);
   } catch (error) {
     if (controller.signal.aborted || version !== state.navigationRerouteVersion) return;
@@ -1128,11 +1227,68 @@ function updateNavigation(position) {
     else calculateRoute(point, state.destination).finally(() => { state.rerouting = false; });
     if (document.body.classList.contains('nav-active')) setTimeout(() => { state.rerouting = false; }, 5000);
   }
+  persistNavigationResume(false);
 }
-async function startNavigation() {
+async function resumeNavigationFromSnapshot() {
+  const snapshot = state.navigationResumeSnapshot || readNavigationResumeSnapshot();
+  if (!snapshot?.route?.path?.length) { toast('Aucun trajet à reprendre.'); return; }
+  state.navigationResumeSnapshot = snapshot;
+  state.mode = snapshot.mode || 'vtt';
+  state.familyFast = Boolean(snapshot.familyFast);
+  state.seekIntense = Boolean(snapshot.seekIntense);
+  localStorage.setItem('ct_family_fast', String(state.familyFast));
+  localStorage.setItem('ct_seek_intense', String(state.seekIntense));
+  setMode(state.mode);
+  state.origin = snapshot.origin; state.destination = snapshot.destination;
+  $('#origin-input').value = snapshot.originLabel || 'Départ enregistré';
+  $('#destination-input').value = snapshot.destinationLabel || 'Arrivée enregistrée';
+  state.manualMode = false;
+  state.manualReturnToStart = Boolean(snapshot.manualReturnToStart);
+  state.manualPoints = Array.isArray(snapshot.manualPoints) ? snapshot.manualPoints : [];
+  state.manualLegs = Array.isArray(snapshot.manualLegs) ? snapshot.manualLegs : [];
+  state.route = snapshot.route;
+  state.navigationSegments = Array.isArray(snapshot.navigationSegments)
+    ? snapshot.navigationSegments : (snapshot.route.navigationSegments || []);
+  state.navigationAvoids = snapshot.navigationAvoids || snapshot.route.navigationAvoids || [];
+  state.navigationViaPoints = snapshot.navigationViaPoints || snapshot.route.navigationViaPoints || [];
+  state.lastPosition = snapshot.lastPosition || snapshot.origin;
+  state.currentStep = Math.max(0, Math.min(Number(snapshot.currentStep) || 0, (state.route.legs?.[0]?.steps?.length || 1) - 1));
+  state.distanceTravelledMeters = Number(snapshot.distanceTravelledMeters) || 0;
+  state.movingDistanceMeters = Number(snapshot.movingDistanceMeters) || 0;
+  state.movingSeconds = Number(snapshot.movingSeconds) || 0;
+  state.routeStartDistanceTravelled = Number(snapshot.routeStartDistanceTravelled) || 0;
+  state.navigationHeading = Number.isFinite(snapshot.navigationHeading) ? snapshot.navigationHeading : null;
+  state.lastSpokenStep = Number(snapshot.lastSpokenStep) || -1;
+  if (!initializeMap()) return;
+  if (state.route.manual && state.manualPoints.length > 1 && state.manualLegs.length) renderManualTrack();
+  state.route = snapshot.route;
+  state.navigationSegments = Array.isArray(snapshot.navigationSegments)
+    ? snapshot.navigationSegments : (snapshot.route.navigationSegments || []);
+  state.navigationAvoids = snapshot.navigationAvoids || snapshot.route.navigationAvoids || [];
+  state.navigationViaPoints = snapshot.navigationViaPoints || snapshot.route.navigationViaPoints || [];
+  updateManualModeUI();
+  drawRoute(); showRoute();
+  $('#route-title').textContent = state.route.manual ? 'Tracé manuel' : 'Votre parcours';
+  $('#route-result').classList.toggle('manual-result', Boolean(state.route.manual));
+  await startNavigation(true);
+}
+
+function forgetNavigationResume() {
+  localStorage.removeItem('ct_navigation_resume');
+  state.navigationResumeSnapshot = null;
+  renderResumeTripCard();
+  toast('Trajet précédent oublié.');
+}
+
+async function startNavigation(resuming = false) {
   if (!state.route) { toast(state.manualMode ? 'Ajoutez au moins une étape sur la carte.' : 'Calculez d’abord un itinéraire.'); return; }
   if (!navigator.geolocation) { toast('La géolocalisation n’est pas disponible sur cet appareil.'); return; }
   if (state.manualMode) finishManualMode();
+  if (!resuming) {
+    localStorage.removeItem('ct_navigation_resume');
+    state.navigationResumeSnapshot = null;
+    state.lastResumeSaveAt = 0;
+  }
   state.navigationManualRoute = Boolean(state.route.manual);
   state.navigationAvoids = [...(state.route.navigationAvoids || [])];
   state.navigationViaPoints = [...(state.route.navigationViaPoints || (state.route.manual
@@ -1157,16 +1313,21 @@ async function startNavigation() {
   $('#map-mode-label').textContent = 'NAVIGATION ' + (state.mode === 'family' ? 'VÉLO FAMILIAL' : state.mode === 'road' ? 'VÉLO DE ROUTE' : state.mode === 'moto' ? 'MOTOCROSS' : 'VTT') + ' ACTIVE';
   $('#nav-mode-pill').textContent = (state.mode === 'family' ? state.familyFast ? 'VÉLO FAMILIAL · RAPIDE' : 'VÉLO FAMILIAL · RAVeL' : state.mode === 'road' ? 'VÉLO DE ROUTE' : state.mode === 'moto' ? 'MOTOCROSS · PETITES ROUTES' : 'VTT') + ' · GPS ACTIF';
   $('#nav-rider-image').src = state.mode === 'family' ? 'assets/velo-familial.webp' : state.mode === 'road' ? 'assets/velo-route.webp' : state.mode === 'moto' ? 'assets/motocross-calme.webp' : 'assets/vtt-dynamique.webp';
-  state.distanceTravelledMeters = 0; state.movingDistanceMeters = 0; state.movingSeconds = 0;
-  state.currentSpeedKmh = 0; state.previousGpsSample = null; state.routeStartDistanceTravelled = 0; state.navigationHeading = null; state.lastNavigationZoomAt = 0;
-  state.lastSpokenStep = -1;
-  if (state.mode === 'moto') announceStep(0);
+  if (!resuming) {
+    state.distanceTravelledMeters = 0; state.movingDistanceMeters = 0; state.movingSeconds = 0;
+    state.currentStep = 0; state.routeStartDistanceTravelled = 0; state.navigationHeading = null;
+  }
+  state.currentSpeedKmh = 0; state.previousGpsSample = null; state.lastNavigationZoomAt = 0;
+  state.lastSpokenStep = resuming ? Math.max(-1, state.currentStep - 1) : -1;
+  if (state.mode === 'moto' && !resuming) announceStep(0);
   else speakText(state.mode === 'family' ? state.familyFast ? 'Navigation vélo familial rapide démarrée. Suivez l’itinéraire.' : 'Navigation vélo familial démarrée. Suivez le RAVeL.' : state.mode === 'road' ? 'Navigation vélo de route démarrée. Suivez l’itinéraire rapide.' : 'Navigation VTT démarrée. Suivez le tracé.');
   if ('wakeLock' in navigator) {
     try { state.wakeLock = await navigator.wakeLock.request('screen'); }
     catch { toast('Le maintien de l’écran n’a pas été autorisé par l’appareil.'); }
   }
   renderNavigationPoints();
+  persistNavigationResume(true);
+  renderResumeTripCard();
   state.watchId = navigator.geolocation.watchPosition(updateNavigation, error => {
     $('#nav-gps-status').textContent = 'GPS indisponible';
     toast('GPS : ' + error.message);
@@ -1174,6 +1335,7 @@ async function startNavigation() {
   toast('Navigation active. Ne manipulez pas l’écran en roulant.');
 }
 async function stopNavigation() {
+  persistNavigationResume(true);
   if (state.watchId !== null) navigator.geolocation.clearWatch(state.watchId);
   state.watchId = null;
   document.body.classList.remove('nav-active', 'nav-action-open');
@@ -1181,6 +1343,7 @@ async function stopNavigation() {
   if (window.speechSynthesis) window.speechSynthesis.cancel();
   if (state.wakeLock) { try { await state.wakeLock.release(); } catch {} state.wakeLock = null; }
   $('#nav-panel').classList.add('hidden'); $('#map-mode-label').textContent = state.mode === 'family' ? state.familyFast ? 'OSM · VÉLO FAMILIAL · RAPIDE' : 'OSM · RAVeL & CHEMINS' : state.mode === 'road' ? 'OSM · VÉLO DE ROUTE · RAPIDE' : state.mode === 'vtt' ? 'OSM · ROUTE VTT' : 'OSM · MOTO · PETITES ROUTES';
+  renderResumeTripCard();
   toast('Navigation terminée.');
 }
 
@@ -1190,6 +1353,7 @@ function savedItem(route, index) {
 
 function loadSavedRoute(index) {
   const route = state.saved[index]; if (!route?.origin || !route?.destination) return;
+  state.manualUndo = null;
   if (route.mode) setMode(route.mode);
   if (Array.isArray(route.manualPoints) && route.manualPoints.length > 1) {
     state.manualMode = false;
@@ -1342,7 +1506,9 @@ $('#manual-reset').addEventListener('click', resetManualTrack);
 $('#export-manual-gpx').addEventListener('click', exportGpx);
 $('#use-location').addEventListener('click', useCurrentLocation);
 $('#center-map').addEventListener('click', centerMap);
-$('#start-navigation').addEventListener('click', startNavigation);
+$('#start-navigation').addEventListener('click', () => startNavigation(false));
+$('#resume-navigation').addEventListener('click', resumeNavigationFromSnapshot);
+$('#forget-resume').addEventListener('click', forgetNavigationResume);
 $('#stop-navigation').addEventListener('click', stopNavigation);
 $('#voice-toggle').addEventListener('click', toggleVoice);
 $('#save-route').addEventListener('click', saveRoute);
@@ -1371,6 +1537,7 @@ document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.addEve
 window.addEventListener('online', () => { $('#connection-label').textContent = 'En ligne'; });
 window.addEventListener('offline', () => { $('#connection-label').textContent = 'Hors ligne'; });
 document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'hidden') persistNavigationResume(true);
   if (document.visibilityState === 'visible' && state.watchId !== null && 'wakeLock' in navigator && !state.wakeLock) {
     try { state.wakeLock = await navigator.wakeLock.request('screen'); } catch {}
   }
@@ -1388,6 +1555,8 @@ if (arrivalIntro) {
 
 renderSaved();
 setMode(state.mode);
+renderResumeTripCard();
 updateVoiceButton();
+window.addEventListener('pagehide', () => persistNavigationResume(true));
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
 initializeMap();
