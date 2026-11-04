@@ -13,6 +13,7 @@ const state = {
   distanceTravelledMeters: 0, movingDistanceMeters: 0, movingSeconds: 0,
   currentSpeedKmh: 0, previousGpsSample: null, routeStartDistanceTravelled: 0, lastHeading: null, lastMapBearing: 0, navigationHeading: null, lastNavigationZoomAt: 0, navigationFollow: true, programmaticNavigationZoom: false,
   searchTimers: {}, searchControllers: {}, suggestions: {origin: [], destination: []},
+  navigationAvoids: [], navigationViaPoints: [], navigationManualRoute: false, navigationPointLayers: [], navigationRerouteController: null, navigationRerouteVersion: 0,
   saved: JSON.parse(localStorage.getItem('ct_saved_routes') || '[]')
 };
 
@@ -137,8 +138,8 @@ function initializeMap() {
   });
   useBasemap(state.mapStyle, false);
   state.map.on('click', event => {
-    if (document.body.classList.contains('nav-active')) return;
     const point = {lat: event.latlng.lat, lon: event.latlng.lng};
+    if (document.body.classList.contains('nav-active')) { handleNavigationMapClick(point); return; }
     if (state.mapPickTarget) {
       const target = state.mapPickTarget;
       setPoint(target, point);
@@ -267,7 +268,7 @@ function normalizeValhalla(payload) {
 
 function normalizeBRouter(payload) {
   const feature = payload.features?.find(item => item.geometry?.type === 'LineString');
-  if (!feature) throw new Error(payload.error || 'BRouter n’a pas trouvé de parcours VTT pour ces points.');
+  if (!feature) throw new Error(payload.error || 'BRouter n’a pas trouvé de parcours pour ces points.');
   const path = parseShape(feature.geometry);
   if (path.length < 2) throw new Error('BRouter n’a pas renvoyé de tracé exploitable.');
   let distanceMeters = 0;
@@ -407,28 +408,10 @@ function updateManualModeUI() {
 }
 
 async function requestManualSegment(origin, destination, signal) {
-  if (state.mode === 'moto') {
-    const routeRequest = {
-      locations: [{lat: origin.lat, lon: origin.lon, type: 'break'}, {lat: destination.lat, lon: destination.lon, type: 'break'}],
-      costing: 'motorcycle',
-      costing_options: {motorcycle: {use_highways: 0, use_trails: 1, use_tracks: 1, use_distance: 0.9, top_speed: 30, speed_penalty_factor: 0.5, use_tolls: 0, use_living_streets: 0}},
-      directions_options: {units: 'kilometers', language: 'fr-FR'},
-      shape_format: 'geojson'
-    };
-    const response = await fetch(state.routeServer, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json', 'X-Client-Id': 'cross-travel (github.com/kgjames26/cross-travel)'},
-      body: JSON.stringify(routeRequest), signal
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || payload.status_message || `Valhalla indisponible (${response.status}).`);
-    return normalizeValhalla(payload);
-  }
   const params = new URLSearchParams({
     lonlats: `${origin.lon},${origin.lat}|${destination.lon},${destination.lat}`,
-    profile: 'mtb', alternativeidx: '0', format: 'geojson'
+    profile: 'trekking', alternativeidx: '0', format: 'geojson'
   });
-  params.set('profile:avoid_unsafe', '1');
   const response = await fetch(`${BROUTER_URL}?${params}`, {signal, headers: {'Accept': 'application/geo+json'}});
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || `BRouter indisponible (${response.status}).`);
@@ -446,9 +429,10 @@ function renderManualTrack() {
     state.manualLine = L.featureGroup(lines).addTo(state.map);
   }
   points.forEach((point, index) => {
-    const label = index === 0 ? 'D' : manualStepName(index - 1);
-    const startClass = index === 0 ? ' manual-marker-start' : '';
-    const icon = L.divIcon({className: 'manual-marker-shell', html: `<span class="manual-marker${startClass}">${label}</span>`, iconSize: [34, 34], iconAnchor: [17, 17]});
+    const isFinish = index === points.length - 1 && index > 0;
+    const label = index === 0 ? 'D' : isFinish ? '🏁' : manualStepName(index - 1);
+    const markerClass = index === 0 ? ' manual-marker-start' : isFinish ? ' manual-marker-finish' : '';
+    const icon = L.divIcon({className: 'manual-marker-shell', html: `<span class="manual-marker${markerClass}">${label}</span>`, iconSize: [34, 34], iconAnchor: [17, 17]});
     state.manualMarkers.push(L.marker([point.lat, point.lon], {icon, interactive: false, keyboard: false, zIndexOffset: 900}).addTo(state.map));
   });
 
@@ -470,11 +454,20 @@ function renderManualTrack() {
       details = `Tronçon : ${formatDistance(leg.distanceMeters)}`;
       cumulativeLabel = cumulative[i] === null ? 'Cumul incomplet' : `Cumul : ${formatDistance(cumulative[i])}`;
     } else if (leg?.status === 'error') details = 'Chemin introuvable. Déplacez ce point.';
-    rows.push(`<li class="manual-stage-row"><span class="manual-stage-badge">${label}</span><div class="manual-stage-copy"><strong>Étape ${label}</strong><span>${points[i].lat.toFixed(5)}, ${points[i].lon.toFixed(5)} · ${details}</span><small>${cumulativeLabel}</small></div><button class="manual-remove-step" type="button" data-manual-remove="${i}" aria-label="Supprimer l’étape ${label}">×</button></li>`);
+    const isFinish = i === points.length - 1;
+    const badge = isFinish ? '🏁' : label;
+    const stageName = isFinish ? 'Arrivée' : `Étape ${label}`;
+    rows.push(`<li class="manual-stage-row"><span class="manual-stage-badge${isFinish ? ' manual-stage-finish' : ''}">${badge}</span><div class="manual-stage-copy"><strong>${stageName}</strong><span>${points[i].lat.toFixed(5)}, ${points[i].lon.toFixed(5)} · ${details}</span><small>${cumulativeLabel}</small></div><div class="manual-stage-controls"><button class="manual-stage-order" type="button" data-move-manual="${i}" data-direction="-1" aria-label="Monter ${stageName}" ${i === 1 ? 'disabled' : ''}>↑</button><button class="manual-stage-order" type="button" data-move-manual="${i}" data-direction="1" aria-label="Descendre ${stageName}" ${i === points.length - 1 ? 'disabled' : ''}>↓</button><button class="manual-remove-step" type="button" data-manual-remove="${i}" aria-label="Supprimer ${stageName}">×</button></div></li>`);
   }
   $('#manual-stage-list').innerHTML = rows.join('');
   $('#manual-stage-list').querySelectorAll('[data-manual-remove]').forEach(button => button.addEventListener('click', () => {
     state.manualPoints.splice(Number(button.dataset.manualRemove), 1);
+    updateManualTrack();
+  }));
+  $('#manual-stage-list').querySelectorAll('[data-move-manual]').forEach(button => button.addEventListener('click', () => {
+    const index = Number(button.dataset.moveManual), next = index + Number(button.dataset.direction);
+    if (index < 1 || next < 1 || next >= state.manualPoints.length) return;
+    [state.manualPoints[index], state.manualPoints[next]] = [state.manualPoints[next], state.manualPoints[index]];
     updateManualTrack();
   }));
 
@@ -772,6 +765,166 @@ function offsetPointMeters(origin, distanceMeters, bearingDegrees) {
   return [lat2 * 180 / Math.PI, lon2 * 180 / Math.PI];
 }
 
+function nearestPathProgress(point) {
+  const path = state.route?.path || [];
+  if (!path.length) return 0;
+  let bestDistance = Infinity, bestIndex = 0, total = 0, bestProgress = 0;
+  const distances = [0];
+  for (let i = 1; i < path.length; i++) distances[i] = distances[i - 1] + L.latLng(path[i - 1]).distanceTo(L.latLng(path[i]));
+  for (let i = 0; i < path.length; i++) {
+    const distance = L.latLng(path[i]).distanceTo([point.lat, point.lon]);
+    if (distance < bestDistance) { bestDistance = distance; bestIndex = i; }
+  }
+  total = distances.at(-1) || 1;
+  bestProgress = distances[bestIndex] / total;
+  return bestProgress;
+}
+
+function clearNavigationPointLayers() {
+  state.navigationPointLayers.forEach(layer => { if (state.map?.hasLayer(layer)) state.map.removeLayer(layer); });
+  state.navigationPointLayers = [];
+}
+
+function renderNavigationPoints() {
+  if (!state.map || !document.body.classList.contains('nav-active')) return;
+  clearNavigationPointLayers();
+  state.navigationAvoids.forEach(point => {
+    const ring = L.circle([point.lat, point.lon], {radius: 60, color: '#bd2630', weight: 2, fillColor: '#f4444c', fillOpacity: .16, interactive: false});
+    const icon = L.divIcon({className: 'nav-point-shell', html: '<span class="nav-point-marker nav-point-forbidden">×</span>', iconSize: [30, 30], iconAnchor: [15, 15]});
+    state.navigationPointLayers.push(ring, L.marker([point.lat, point.lon], {icon, interactive: false, keyboard: false, zIndexOffset: 1200}));
+  });
+  state.navigationViaPoints.forEach((item, index) => {
+    const icon = L.divIcon({className: 'nav-point-shell', html: '<span class="nav-point-marker nav-point-via">V</span>', iconSize: [30, 30], iconAnchor: [15, 15]});
+    state.navigationPointLayers.push(L.marker([item.lat, item.lon], {icon, interactive: false, keyboard: false, zIndexOffset: 1100}));
+  });
+  state.navigationPointLayers.forEach(layer => layer.addTo(state.map));
+}
+
+function syncNavigationRouteEdits() {
+  if (state.route) {
+    state.route.navigationAvoids = [...state.navigationAvoids];
+    state.route.navigationViaPoints = [...state.navigationViaPoints];
+  }
+  renderNavigationPoints();
+}
+
+function handleNavigationMapClick(point) {
+  if (!state.route || !state.map) return;
+  state.map.closePopup();
+  const nearbyAvoid = state.navigationAvoids.findIndex(item => state.map.distance([item.lat, item.lon], [point.lat, point.lon]) < 55);
+  if (nearbyAvoid >= 0) {
+    state.navigationAvoids.splice(nearbyAvoid, 1);
+    syncNavigationRouteEdits();
+    recalculateNavigationRoute('Passage interdit supprimé.');
+    return;
+  }
+  const nearbyVia = state.navigationViaPoints.findIndex(item => state.map.distance([item.lat, item.lon], [point.lat, point.lon]) < 45);
+  if (nearbyVia >= 0) {
+    state.navigationViaPoints.splice(nearbyVia, 1);
+    syncNavigationRouteEdits();
+    recalculateNavigationRoute('Étape supprimée.');
+    return;
+  }
+  const routePoints = state.routeLayer?.getLatLngs() || [];
+  const onRoute = routePoints.some(item => state.map.distance(item, [point.lat, point.lon]) < 65);
+  const popup = L.popup({closeButton: true, className: 'nav-map-actions', offset: [0, -8]})
+    .setLatLng([point.lat, point.lon])
+    .setContent(`<div class="nav-map-action-card"><strong>${onRoute ? 'Modifier le parcours' : 'Ajouter une étape'}</strong>${onRoute ? '<button type="button" data-nav-action="avoid">Interdire ce passage</button>' : ''}<button type="button" data-nav-action="via">Ajouter comme étape</button></div>`)
+    .openOn(state.map);
+  document.body.classList.add('nav-action-open');
+  state.map.once('popupclose', () => document.body.classList.remove('nav-action-open'));
+  {
+    const element = popup.getElement();
+    element?.querySelectorAll('[data-nav-action]').forEach(button => button.addEventListener('click', () => {
+      const action = button.dataset.navAction;
+      if (action === 'avoid' && onRoute) {
+        state.navigationAvoids.push({lat: point.lat, lon: point.lon});
+        syncNavigationRouteEdits();
+        recalculateNavigationRoute('Passage interdit ajouté. Recherche d’un détour.');
+      } else if (action === 'via') {
+        state.navigationViaPoints.push({lat: point.lat, lon: point.lon, progress: nearestPathProgress(point)});
+        state.navigationViaPoints.sort((a, b) => a.progress - b.progress);
+        syncNavigationRouteEdits();
+        recalculateNavigationRoute('Étape ajoutée au parcours.');
+      }
+      state.map.closePopup();
+    }));
+  }
+}
+
+function navigationBRouterProfile() {
+  if (state.navigationManualRoute) return 'trekking';
+  if (state.mode === 'road' || (state.mode === 'family' && state.familyFast)) return 'fastbike-verylowtraffic';
+  return 'mtb';
+}
+
+async function requestNavigationSegment(origin, destination, signal) {
+  const profile = navigationBRouterProfile();
+  const params = new URLSearchParams({
+    lonlats: `${origin.lon},${origin.lat}|${destination.lon},${destination.lat}`,
+    profile, alternativeidx: '0', format: 'geojson'
+  });
+  if (profile === 'mtb' && !state.navigationManualRoute) {
+    params.set('profile:path_preference', state.mode === 'family' ? '100' : state.seekIntense ? '160' : $('#favor-trails').checked ? '80' : '20');
+    params.set('profile:cycleroutes_pref', state.mode === 'family' ? '1.0' : state.mode === 'vtt' && state.seekIntense ? '0.2' : $('#favor-trails').checked ? '3.0' : '0.2');
+    params.set('profile:MTB_factor', state.mode === 'vtt' && state.seekIntense ? '2.0' : '0.0');
+    params.set('profile:isbike_for_mainroads', state.mode === 'family' ? '0' : '1');
+    params.set('profile:hills', state.mode === 'family' ? '2' : '0');
+    params.set('profile:avoid_unsafe', '1');
+  }
+  if (state.navigationAvoids.length) {
+    params.set('nogos', state.navigationAvoids.map(point => `${point.lon},${point.lat},60`).join('|'));
+  }
+  const response = await fetch(`${BROUTER_URL}?${params}`, {signal, headers: {'Accept': 'application/geo+json'}});
+  const text = await response.text();
+  let payload;
+  try { payload = JSON.parse(text); } catch { payload = {}; }
+  if (!response.ok) throw new Error(payload.error || text.replace(/<[^>]*>/g, ' ').trim().slice(0, 180) || `BRouter indisponible (${response.status}).`);
+  return normalizeBRouter(payload);
+}
+
+async function recalculateNavigationRoute(message = 'Parcours recalculé.') {
+  if (!state.route || !state.destination || !state.map || !document.body.classList.contains('nav-active')) return;
+  state.navigationRerouteController?.abort();
+  const controller = new AbortController();
+  state.navigationRerouteController = controller;
+  const version = ++state.navigationRerouteVersion;
+  const center = state.map.getCenter(), zoom = state.map.getZoom();
+  const origin = state.lastPosition || state.origin;
+  const orderedVias = [...state.navigationViaPoints].sort((a, b) => a.progress - b.progress);
+  const targets = [...orderedVias.map(item => ({lat: item.lat, lon: item.lon})), state.destination];
+  try {
+    const routes = [];
+    let cursor = origin;
+    for (const target of targets) {
+      const segment = await requestNavigationSegment(cursor, target, controller.signal);
+      if (controller.signal.aborted || version !== state.navigationRerouteVersion) return;
+      routes.push(segment); cursor = target;
+    }
+    const path = [];
+    const steps = [];
+    let distanceMeters = 0, durationSeconds = 0;
+    routes.forEach((route, index) => {
+      path.push(...(index ? route.path.slice(1) : route.path));
+      distanceMeters += route.distanceMeters; durationSeconds += route.durationSeconds;
+      steps.push(...(route.legs[0]?.steps || []));
+    });
+    if (!steps.length) throw new Error('Le moteur n’a pas fourni d’étapes de navigation.');
+    state.origin = origin;
+    state.route = {manual: state.navigationManualRoute, path, distanceMeters, durationSeconds, legs: [{steps}], navigationAvoids: [...state.navigationAvoids], navigationViaPoints: [...state.navigationViaPoints]};
+    state.currentStep = 0;
+    state.routeStartDistanceTravelled = state.distanceTravelledMeters;
+    drawRoute();
+    state.map.setView(center, zoom, {animate: false});
+    renderNavigationPoints();
+    updateNavigation({coords: {latitude: origin.lat, longitude: origin.lon, accuracy: 10, speed: 0}, timestamp: Date.now()});
+    toast(message);
+  } catch (error) {
+    if (controller.signal.aborted || version !== state.navigationRerouteVersion) return;
+    toast('Détour impossible : ' + error.message);
+  }
+}
+
 function updateNavigation(position) {
   if (!state.route || !state.map) return;
   const point = {lat: position.coords.latitude, lon: position.coords.longitude};
@@ -860,16 +1013,21 @@ function updateNavigation(position) {
   let nearestRouteDistance = Infinity;
   const sampleEvery = Math.max(1, Math.floor(routePoints.length / 250));
   for (let i = 0; i < routePoints.length; i += sampleEvery) nearestRouteDistance = Math.min(nearestRouteDistance, state.map.distance(routePoints[i], [point.lat, point.lon]));
-  if (!state.route.manual && state.routeLayer && !state.rerouting && now - state.lastRerouteAt > 15000 && nearestRouteDistance > 120) {
+  if (state.routeLayer && !state.rerouting && now - state.lastRerouteAt > 15000 && nearestRouteDistance > 120) {
     state.rerouting = true; state.lastRerouteAt = now;
     toast('Écart détecté. Recalcul du parcours.');
-    calculateRoute(point, state.destination).finally(() => { state.rerouting = false; });
+    if (document.body.classList.contains('nav-active')) recalculateNavigationRoute('Itinéraire adapté à votre position.');
+    else calculateRoute(point, state.destination).finally(() => { state.rerouting = false; });
+    if (document.body.classList.contains('nav-active')) setTimeout(() => { state.rerouting = false; }, 5000);
   }
 }
 async function startNavigation() {
   if (!state.route) { toast(state.manualMode ? 'Ajoutez au moins une étape sur la carte.' : 'Calculez d’abord un itinéraire.'); return; }
   if (!navigator.geolocation) { toast('La géolocalisation n’est pas disponible sur cet appareil.'); return; }
   if (state.manualMode) finishManualMode();
+  state.navigationManualRoute = Boolean(state.route.manual);
+  state.navigationAvoids = [...(state.route.navigationAvoids || [])];
+  state.navigationViaPoints = [...(state.route.navigationViaPoints || (state.route.manual ? state.manualPoints.slice(1, -1).map((point, index) => ({...point, progress: (index + 1) / (state.manualPoints.length - 1)})) : []))];
   $('#nav-panel').classList.remove('hidden');
   document.body.classList.add('nav-active');
   state.navigationFollow = true;
@@ -887,6 +1045,7 @@ async function startNavigation() {
     try { state.wakeLock = await navigator.wakeLock.request('screen'); }
     catch { toast('Le maintien de l’écran n’a pas été autorisé par l’appareil.'); }
   }
+  renderNavigationPoints();
   state.watchId = navigator.geolocation.watchPosition(updateNavigation, error => {
     $('#nav-gps-status').textContent = 'GPS indisponible';
     toast('GPS : ' + error.message);
@@ -896,7 +1055,8 @@ async function startNavigation() {
 async function stopNavigation() {
   if (state.watchId !== null) navigator.geolocation.clearWatch(state.watchId);
   state.watchId = null;
-  document.body.classList.remove('nav-active');
+  document.body.classList.remove('nav-active', 'nav-action-open');
+  state.navigationRerouteController?.abort(); state.navigationRerouteController = null; clearNavigationPointLayers();
   if (window.speechSynthesis) window.speechSynthesis.cancel();
   if (state.wakeLock) { try { await state.wakeLock.release(); } catch {} state.wakeLock = null; }
   $('#nav-panel').classList.add('hidden'); $('#map-mode-label').textContent = state.mode === 'family' ? state.familyFast ? 'OSM · VÉLO FAMILIAL · RAPIDE' : 'OSM · RAVeL & CHEMINS' : state.mode === 'road' ? 'OSM · VÉLO DE ROUTE · RAPIDE' : state.mode === 'vtt' ? 'OSM · ROUTE VTT' : 'OSM · MOTO · PETITES ROUTES';
