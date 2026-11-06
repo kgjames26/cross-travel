@@ -12,7 +12,7 @@ const state = {
   origin: null, destination: null, currentStep: 0, watchId: null, wakeLock: null,
   lastPosition: null, navigationMarker: null, rerouting: false, lastRerouteAt: 0,
   lastGeocodeAt: 0, routeServer: localStorage.getItem('ct_route_server') || DEFAULT_ROUTER,
-  mode: localStorage.getItem('ct_mode') || 'vtt', language: localStorage.getItem('ct_language') || 'fr', units: localStorage.getItem('ct_units') || 'metric', mapPickTarget: null, manualMode: false, manualReturnToStart: false, manualDestinationLocked: false, manualPoints: [], manualLegs: [], manualMarkers: [], manualLine: null, manualController: null, manualRoutingVersion: 0,
+  mode: localStorage.getItem('ct_mode') || 'vtt', language: localStorage.getItem('ct_language') || 'fr', units: localStorage.getItem('ct_units') || 'metric', mapPickTarget: null, manualMode: false, manualReturnToStart: false, manualDestinationLocked: false, manualPoints: [], manualPassageNumber: 1, manualLegs: [], manualMarkers: [], manualLine: null, manualController: null, manualRoutingVersion: 0,
   seekIntense: localStorage.getItem('ct_seek_intense') === 'true',
   familyFast: localStorage.getItem('ct_family_fast') === 'true',
   voiceEnabled: localStorage.getItem('ct_voice_enabled') !== 'false', lastSpokenStep: -1,
@@ -79,7 +79,7 @@ function persistNavigationResume(force = false) {
     lastPosition: state.lastPosition, currentStep: state.currentStep, navigationProgress: state.navigationProgress,
     distanceTravelledMeters: state.distanceTravelledMeters, movingDistanceMeters: state.movingDistanceMeters,
     movingSeconds: state.movingSeconds, routeStartDistanceTravelled: state.routeStartDistanceTravelled,
-    manualPoints: state.manualPoints, manualLegs: state.manualLegs, manualReturnToStart: state.manualReturnToStart, manualDestinationLocked: state.manualDestinationLocked, navigationDetour: state.navigationDetour,
+    manualPoints: state.manualPoints, manualPassageNumber: state.manualPassageNumber, manualLegs: state.manualLegs, manualReturnToStart: state.manualReturnToStart, manualDestinationLocked: state.manualDestinationLocked, navigationDetour: state.navigationDetour,
     navigationHeading: state.navigationHeading, lastSpokenStep: state.lastSpokenStep
   };
   try {
@@ -826,6 +826,23 @@ function manualStepName(index) {
   return label;
 }
 
+function ensureManualPassageNumbers(points = state.manualPoints) {
+  const highest = points.reduce((max, point, index) => {
+    const number = Number(point?.passageNumber);
+    return index > 0 && Number.isInteger(number) && number > 0 ? Math.max(max, number) : max;
+  }, 0);
+  state.manualPassageNumber = Math.max(1, Number(state.manualPassageNumber) || 1, highest + 1);
+  points.forEach((point, index) => {
+    if (index === 0) {
+      if (point?.passageNumber !== undefined) delete point.passageNumber;
+      return;
+    }
+    const number = Number(point?.passageNumber);
+    if (!Number.isInteger(number) || number < 1) point.passageNumber = state.manualPassageNumber++;
+  });
+  return points;
+}
+
 function clearManualLayers() {
   if (state.map && state.manualLine && state.map.hasLayer(state.manualLine)) state.map.removeLayer(state.manualLine);
   state.manualMarkers.forEach(marker => { if (state.map?.hasLayer(marker)) state.map.removeLayer(marker); });
@@ -919,7 +936,7 @@ function manualExpectedLegCount() {
 function renderManualTrack() {
   if (!state.map || !state.manualPoints.length) return;
   clearManualLayers();
-  const points = state.manualPoints;
+  const points = ensureManualPassageNumbers(state.manualPoints);
   const themeRoute = getComputedStyle(document.body).getPropertyValue('--mode-strong').trim() || '#24382b';
   const readyLegs = state.manualLegs.filter(leg => leg.status === 'ready' && leg.path?.length > 1);
   if (readyLegs.length) {
@@ -932,13 +949,14 @@ function renderManualTrack() {
       state.manualMarkers.push(createStartMarker(point).addTo(state.map));
       return;
     }
-    if (isFinish) {
-      state.manualMarkers.push(L.marker([point.lat, point.lon], {icon: finishMarkerIcon(), interactive: false, keyboard: false, zIndexOffset: 1300}).addTo(state.map));
-      return;
-    }
-    const label = manualStepName(index - 1);
-    const icon = L.divIcon({className: 'manual-marker-shell', html: `<span class="manual-marker">${label}</span>`, iconSize: [34, 34], iconAnchor: [17, 17]});
-    state.manualMarkers.push(L.marker([point.lat, point.lon], {icon, interactive: false, keyboard: false, zIndexOffset: 900}).addTo(state.map));
+    const passageNumber = Number(point.passageNumber) || index;
+    const markerClass = isFinish ? 'manual-marker manual-marker-finish' : 'manual-marker';
+    const icon = L.divIcon({
+      className: 'manual-marker-shell',
+      html: `<span class="${markerClass}" aria-label="Point de passage ${passageNumber}">${passageNumber}</span>`,
+      iconSize: [34, 34], iconAnchor: [17, 17]
+    });
+    state.manualMarkers.push(L.marker([point.lat, point.lon], {icon, interactive: false, keyboard: false, zIndexOffset: isFinish ? 1300 : 900}).addTo(state.map));
   });
 
   const expectedLegCount = manualExpectedLegCount();
@@ -954,15 +972,15 @@ function renderManualTrack() {
   const startLabel = $('#origin-input').value.trim() || `${points[0].lat.toFixed(5)}, ${points[0].lon.toFixed(5)}`;
   const rows = [`<li class="manual-stage-row"><span class="manual-stage-badge manual-stage-start">D</span><div class="manual-stage-copy"><strong>Départ</strong><span>${escapeHtml(startLabel)}</span><small>Cumul : 0,00 km</small></div></li>`];
   for (let i = 1; i < points.length; i++) {
-    const label = manualStepName(i - 1), leg = state.manualLegs[i - 1];
+    const label = manualStepName(i - 1), passageNumber = Number(points[i].passageNumber) || i, leg = state.manualLegs[i - 1];
     let details = 'En attente du calcul du chemin…', cumulativeLabel = 'Cumul : —';
     if (leg?.status === 'ready') {
       details = `Tronçon : ${formatDistance(leg.distanceMeters)}`;
       cumulativeLabel = cumulative[i] === null ? 'Cumul incomplet' : `Cumul : ${formatDistance(cumulative[i])}`;
     } else if (leg?.status === 'error') details = 'Chemin introuvable. Déplacez ce point.';
     const isFinish = i === points.length - 1;
-    const badge = isFinish ? '🏁' : label;
-    const stageName = isFinish ? 'Arrivée' : `Étape ${label}`;
+    const badge = label;
+    const stageName = `Point ${passageNumber}`;
     rows.push(`<li class="manual-stage-row" data-manual-stage data-point-index="${i}"><span class="manual-stage-badge${isFinish ? ' manual-stage-finish' : ''}">${badge}</span><div class="manual-stage-copy"><strong>${stageName}</strong><span>${points[i].lat.toFixed(5)}, ${points[i].lon.toFixed(5)} · ${details}</span><small>${cumulativeLabel}</small></div><div class="manual-stage-controls">${!(isFinish && state.manualDestinationLocked) ? `<button class="manual-stage-drag" type="button" data-drag-manual aria-label="${localizedText('Glisser pour déplacer')} ${stageName}" title="${localizedText('Glisser pour déplacer')}" aria-keyshortcuts="ArrowUp ArrowDown"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2v16M10 2 6.5 5.5M10 2l3.5 3.5M10 18l-3.5-3.5M10 18l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : ''}<button class="manual-remove-step" type="button" data-manual-remove="${i}" aria-label="Supprimer ${stageName}">×</button></div></li>`);
   }
   if (points.length > 1) {
@@ -1124,11 +1142,12 @@ async function toggleManualMode() {
       clearDisplayedRoute(); state.destination = null; state.manualReturnToStart = false;
       state.manualDestinationLocked = Boolean(selectedDestination && state.map.distance([origin.lat, origin.lon], [selectedDestination.lat, selectedDestination.lon]) > 3);
       state.manualPoints = [origin];
+      state.manualPassageNumber = 1;
       if (state.manualDestinationLocked) state.manualPoints.push(selectedDestination);
       else $('#destination-input').value = '';
       state.manualLegs = []; state.currentStep = 0;
     } else if (state.manualPoints[0].lat !== origin.lat || state.manualPoints[0].lon !== origin.lon) {
-      state.manualPoints = [origin]; state.manualLegs = []; clearDisplayedRoute();
+      state.manualPoints = [origin]; state.manualPassageNumber = 1; state.manualLegs = []; clearDisplayedRoute();
       state.manualDestinationLocked = false;
     }
     state.mapPickTarget = null; $('#map-pick-hint').classList.add('hidden');
@@ -1156,6 +1175,7 @@ function resetManualTrack() {
   state.manualUndo = null;
   state.manualReturnToStart = false;
   state.manualDestinationLocked = false;
+  state.manualPassageNumber = 1;
   state.manualPoints = state.origin ? [state.origin] : [];
   state.manualLegs = [];
   if (state.manualPoints.length) updateManualTrack();
@@ -1208,7 +1228,7 @@ function addManualWaypoint(point) {
     || (next && state.map.distance([next.lat, next.lon], [point.lat, point.lon]) < 3)) {
     toast('Ce point est trop proche d’une étape existante.'); return;
   }
-  state.manualPoints.splice(insertionIndex, 0, {lat: point.lat, lon: point.lon});
+  state.manualPoints.splice(insertionIndex, 0, {lat: point.lat, lon: point.lon, passageNumber: state.manualPassageNumber++});
   updateManualTrack();
   toast(`Étape ${manualStepName(insertionIndex - 1)} ajoutée. Calcul du chemin en cours.`);
 }
@@ -1991,6 +2011,8 @@ async function resumeNavigationFromSnapshot() {
   state.manualDestinationLocked = Boolean(snapshot.manualDestinationLocked);
   state.navigationDetour = snapshot.navigationDetour || null;
   state.manualPoints = Array.isArray(snapshot.manualPoints) ? snapshot.manualPoints : [];
+  state.manualPassageNumber = Number(snapshot.manualPassageNumber) || 1;
+  ensureManualPassageNumbers(state.manualPoints);
   state.manualLegs = Array.isArray(snapshot.manualLegs) ? snapshot.manualLegs : [];
   state.route = snapshot.route;
   state.navigationSegments = Array.isArray(snapshot.navigationSegments)
@@ -2115,7 +2137,9 @@ function loadSavedRoute(index) {
   if (Array.isArray(route.manualPoints) && route.manualPoints.length > 1) {
     state.manualMode = false;
     state.origin = route.origin; state.destination = route.destination;
-    state.manualPoints = route.manualPoints.map(point => ({lat: Number(point.lat), lon: Number(point.lon)}));
+    state.manualPoints = route.manualPoints.map(point => ({lat: Number(point.lat), lon: Number(point.lon), ...(Number(point.passageNumber) > 0 ? {passageNumber: Number(point.passageNumber)} : {})}));
+    state.manualPassageNumber = Number(route.manualPassageNumber) || 1;
+    ensureManualPassageNumbers(state.manualPoints);
     state.manualReturnToStart = Boolean(route.manualReturnToStart);
     state.manualDestinationLocked = Boolean(route.manualDestinationLocked);
     $('#origin-input').value = route.originLabel || 'Point enregistré';
@@ -2177,7 +2201,7 @@ function saveSaved() { localStorage.setItem('ct_saved_routes', JSON.stringify(st
 
 function saveRoute() {
   if (!state.route) { toast('Aucun parcours à enregistrer.'); return; }
-  state.saved.unshift({title: routeLabel(), distance: state.route.distanceMeters, savedAt: new Date().toISOString(), mode: state.mode, familyFast: state.mode === 'family' ? state.familyFast : undefined, manualPoints: state.route.manual ? state.manualPoints.map(point => ({lat: point.lat, lon: point.lon})) : undefined, manualReturnToStart: state.route.manual ? state.manualReturnToStart : undefined, manualDestinationLocked: state.route.manual ? state.manualDestinationLocked : undefined, origin: state.origin, destination: state.destination, originLabel: $('#origin-input').value, destinationLabel: $('#destination-input').value});
+  state.saved.unshift({title: routeLabel(), distance: state.route.distanceMeters, savedAt: new Date().toISOString(), mode: state.mode, familyFast: state.mode === 'family' ? state.familyFast : undefined, manualPoints: state.route.manual ? state.manualPoints.map(point => ({...point})) : undefined, manualPassageNumber: state.route.manual ? state.manualPassageNumber : undefined, manualReturnToStart: state.route.manual ? state.manualReturnToStart : undefined, manualDestinationLocked: state.route.manual ? state.manualDestinationLocked : undefined, origin: state.origin, destination: state.destination, originLabel: $('#origin-input').value, destinationLabel: $('#destination-input').value});
   state.saved = state.saved.slice(0, 20); saveSaved(); toast('Parcours enregistré sur cet appareil.');
 }
 
