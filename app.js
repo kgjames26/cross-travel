@@ -492,16 +492,15 @@ function updateMapBearing(position, hasMoved = false) {
   const movementHeading = hasMoved && state.previousGpsSample
     ? bearingBetweenPoints(state.previousGpsSample.point, point)
     : null;
-  // Le cap GPS est plus stable en mouvement; le déplacement mesuré sert de secours.
-  const heading = state.currentSpeedKmh >= 2.5
-    ? (reportedHeading ?? movementHeading)
-    : (movementHeading ?? (state.currentSpeedKmh >= 1.5 ? reportedHeading : null));
+  // N'utiliser le cap GPS que si la position confirme un déplacement, pour éviter un cap périmé à l'arrêt.
+  const heading = hasMoved ? (reportedHeading ?? movementHeading) : null;
   if (heading !== null) state.navigationHeading = heading;
   const target = state.navigationHeading ?? initialRouteBearing();
   if (target === null) return;
   const difference = ((target - state.lastMapBearing + 540) % 360) - 180;
-  if (Math.abs(difference) < 1.5) return;
-  state.lastMapBearing = (state.lastMapBearing + difference * 0.45 + 360) % 360;
+  if (Math.abs(difference) < 0.35) return;
+  // Rotation lissée mais rapide : le haut de la carte rejoint le sens réel du déplacement.
+  state.lastMapBearing = (state.lastMapBearing + difference * 0.78 + 360) % 360;
   state.map.setBearing(state.lastMapBearing);
 }
 function initializeMap() {
