@@ -456,21 +456,48 @@ function useBasemap(style, announce = false) {
   }
   if (announce) toast(nextStyle === 'satellite' ? 'Imagerie satellite activée.' : 'Satellite indisponible : retour à la carte OSM.');
 }
-function updateMapBearing(position) {
-  const reported = position.coords.heading;
-  let heading = typeof reported === "number" && Number.isFinite(reported) && reported >= 0 ? reported : null;
-  if (heading === null && state.previousGpsSample && state.currentSpeedKmh >= 3) {
-    const a = state.previousGpsSample.point, b = {lat: position.coords.latitude, lon: position.coords.longitude};
-    const radians = Math.PI / 180;
-    const y = Math.sin((b.lon - a.lon) * radians) * Math.cos(b.lat * radians);
-    const x = Math.cos(a.lat * radians) * Math.sin(b.lat * radians) - Math.sin(a.lat * radians) * Math.cos(b.lat * radians) * Math.cos((b.lon - a.lon) * radians);
-    heading = (Math.atan2(y, x) / radians + 360) % 360;
+function bearingBetweenPoints(a, b) {
+  const lat1 = Array.isArray(a) ? a[0] : a?.lat;
+  const lon1 = Array.isArray(a) ? a[1] : (a?.lon ?? a?.lng);
+  const lat2 = Array.isArray(b) ? b[0] : b?.lat;
+  const lon2 = Array.isArray(b) ? b[1] : (b?.lon ?? b?.lng);
+  if (![lat1, lon1, lat2, lon2].every(Number.isFinite)) return null;
+  const radians = Math.PI / 180;
+  const y = Math.sin((lon2 - lon1) * radians) * Math.cos(lat2 * radians);
+  const x = Math.cos(lat1 * radians) * Math.sin(lat2 * radians)
+    - Math.sin(lat1 * radians) * Math.cos(lat2 * radians) * Math.cos((lon2 - lon1) * radians);
+  return (Math.atan2(y, x) / radians + 360) % 360;
+}
+
+function initialRouteBearing() {
+  const path = state.route?.path || [];
+  for (let index = 1; index < path.length; index++) {
+    if (state.map?.distance(path[index - 1], path[index]) > 5) {
+      const bearing = bearingBetweenPoints(path[index - 1], path[index]);
+      if (bearing !== null) return bearing;
+    }
   }
+  return null;
+}
+
+function updateMapBearing(position, hasMoved = false) {
+  if (!document.body.classList.contains('nav-active') || typeof state.map?.setBearing !== 'function') return;
+  const reported = position.coords.heading;
+  const reportedHeading = typeof reported === 'number' && Number.isFinite(reported) && reported >= 0 ? reported : null;
+  const point = {lat: position.coords.latitude, lon: position.coords.longitude};
+  const movementHeading = hasMoved && state.previousGpsSample
+    ? bearingBetweenPoints(state.previousGpsSample.point, point)
+    : null;
+  // Le cap GPS est plus stable en mouvement; le déplacement mesuré sert de secours.
+  const heading = state.currentSpeedKmh >= 2.5
+    ? (reportedHeading ?? movementHeading)
+    : (movementHeading ?? (state.currentSpeedKmh >= 1.5 ? reportedHeading : null));
   if (heading !== null) state.navigationHeading = heading;
-  if (heading === null || state.currentSpeedKmh < 1.5 || !state.navigationFollow || typeof state.map?.setBearing !== 'function') return;
-  const difference = ((heading - state.lastMapBearing + 540) % 360) - 180;
-  if (Math.abs(difference) < 4) return;
-  state.lastMapBearing = (state.lastMapBearing + difference * 0.35 + 360) % 360;
+  const target = state.navigationHeading ?? initialRouteBearing();
+  if (target === null) return;
+  const difference = ((target - state.lastMapBearing + 540) % 360) - 180;
+  if (Math.abs(difference) < 1.5) return;
+  state.lastMapBearing = (state.lastMapBearing + difference * 0.45 + 360) % 360;
   state.map.setBearing(state.lastMapBearing);
 }
 function initializeMap() {
@@ -1863,7 +1890,7 @@ function updateNavigation(position) {
     state.movingSeconds += elapsedSeconds;
     state.movingDistanceMeters += hasMoved ? deltaMeters : state.currentSpeedKmh / 3.6 * elapsedSeconds;
   }
-  updateMapBearing(position);
+  updateMapBearing(position, hasMoved);
   state.previousGpsSample = {point, time: sampleTime};
   const routeProjectionNow = nearestRouteProjection(point, Math.max(0, state.navigationProgress - 0.015));
   if (routeProjectionNow && routeProjectionNow.distance < 180) state.navigationProgress = Math.max(state.navigationProgress, routeProjectionNow.progress);
@@ -2035,6 +2062,11 @@ async function startNavigation(resuming = false) {
   if (!resuming) {
     state.distanceTravelledMeters = 0; state.movingDistanceMeters = 0; state.movingSeconds = 0;
     state.currentStep = 0; state.routeStartDistanceTravelled = 0; state.navigationHeading = null;
+  }
+  state.navigationHeading = Number.isFinite(state.navigationHeading) ? state.navigationHeading : initialRouteBearing();
+  if (state.navigationHeading !== null && typeof state.map.setBearing === 'function') {
+    state.lastMapBearing = state.navigationHeading;
+    state.map.setBearing(state.lastMapBearing);
   }
   state.currentSpeedKmh = 0; state.previousGpsSample = resuming && state.lastPosition ? {point: {...state.lastPosition}, time: Date.now()} : null; state.lastNavigationZoomAt = 0;
   state.lastSpokenStep = resuming ? Math.max(-1, state.currentStep - 1) : -1;
