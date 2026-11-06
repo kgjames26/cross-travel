@@ -856,8 +856,8 @@ body.nav-action-open .nav-panel{background:rgba(13,22,17,.18);backdrop-filter:no
 @media(max-width:520px){.nav-detour-status{gap:6px;padding:7px}.nav-detour-status span{font-size:10px}.nav-detour-status button{padding:6px;font-size:9px}}
 
 .nav-vehicle-shell{border:0;background:transparent}
-.nav-vehicle{display:grid;place-items:center;width:50px;height:50px;border:1px solid rgba(18,28,22,.58);border-radius:50%;background:rgba(255,255,255,.5);box-shadow:0 2px 8px rgba(0,0,0,.4);transform:rotate(var(--vehicle-bearing,0deg));transform-origin:center;overflow:visible}
-.nav-vehicle-image{display:block;width:44px;height:44px;object-fit:contain;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));transform-origin:center}
+.nav-vehicle{display:grid;place-items:center;width:52px;height:52px;border:1px solid rgba(18,28,22,.72);border-radius:0;background:linear-gradient(155deg,rgba(255,255,255,.98),rgba(225,238,218,.94));box-shadow:0 2px 9px rgba(0,0,0,.48);clip-path:polygon(50% 0,100% 38%,78% 38%,78% 100%,22% 100%,22% 38%,0 38%);transform:rotate(var(--vehicle-bearing,0deg));transform-origin:center;overflow:hidden}
+.nav-vehicle-image{display:block;width:46px;height:46px;object-fit:contain;filter:drop-shadow(0 1px 2px rgba(0,0,0,.65));transform-origin:center}
 .nav-vehicle.is-moving.nav-vehicle-family .nav-vehicle-image,.nav-vehicle.is-moving.nav-vehicle-road .nav-vehicle-image,.nav-vehicle.is-moving.nav-vehicle-vtt .nav-vehicle-image{animation:vehicle-pedal .42s ease-in-out infinite}
 .nav-vehicle.is-moving.nav-vehicle-moto .nav-vehicle-image{animation:vehicle-speed .13s linear infinite}
 @keyframes vehicle-pedal{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-2px) rotate(1deg)}}
