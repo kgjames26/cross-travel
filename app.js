@@ -400,7 +400,11 @@ function updateNavigationVehicleMarker(point) {
     state.navigationMarker.setLatLng([point.lat, point.lon]);
   }
   const icon = state.navigationMarker.getElement()?.querySelector('.nav-vehicle');
-  if (icon) icon.classList.toggle('is-moving', state.currentSpeedKmh >= 1.5);
+  if (icon) {
+    icon.classList.toggle('is-moving', state.currentSpeedKmh >= 1.5);
+    const bearing = Number.isFinite(state.lastMapBearing) ? state.lastMapBearing : (state.navigationHeading || 0);
+    icon.style.setProperty('--vehicle-bearing', bearing + 'deg');
+  }
 }
 
 function createStartMarker(point) {
