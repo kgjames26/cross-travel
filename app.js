@@ -1,6 +1,7 @@
 const $ = (selector) => document.querySelector(selector);
 const DEFAULT_ROUTER = 'https://valhalla1.openstreetmap.de/route';
 const BROUTER_URL = 'https://brouter.de/brouter';
+const STARTUP_FALLBACK_CENTER = [50.8503, 4.3517]; // Bruxelles-Centre
 function readNavigationResumeSnapshot() {
   try {
     const snapshot = JSON.parse(localStorage.getItem('ct_navigation_resume') || 'null');
@@ -8,7 +9,7 @@ function readNavigationResumeSnapshot() {
   } catch { return null; }
 }
 const state = {
-  map: null, tileLayer: null, streetLayer: null, satelliteLayer: null, mapStyle: localStorage.getItem('ct_map_style') || "osm", satelliteErrors: 0, satelliteLoaded: false, satelliteLoadTimer: null, route: null, routeLayer: null, stepLayers: [], markers: [],
+  map: null, tileLayer: null, streetLayer: null, satelliteLayer: null, locationMarker: null, startupLocationWatchId: null, startupLocationResolved: false, mapStyle: localStorage.getItem('ct_map_style') || "osm", satelliteErrors: 0, satelliteLoaded: false, satelliteLoadTimer: null, route: null, routeLayer: null, stepLayers: [], markers: [],
   origin: null, destination: null, currentStep: 0, watchId: null, wakeLock: null,
   lastPosition: null, navigationMarker: null, rerouting: false, lastRerouteAt: 0,
   lastGeocodeAt: 0, routeServer: localStorage.getItem('ct_route_server') || DEFAULT_ROUTER,
@@ -473,6 +474,30 @@ function bearingBetweenPoints(a, b) {
   return (Math.atan2(y, x) / radians + 360) % 360;
 }
 
+function locateOnStartup() {
+  if (state.startupLocationResolved || state.startupLocationWatchId !== null) return;
+  if (!navigator.geolocation) { toast('GPS indisponible · Bruxelles-Centre affiché.'); return; }
+  state.startupLocationWatchId = navigator.geolocation.watchPosition(position => {
+    const lat = Number(position.coords.latitude), lon = Number(position.coords.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    state.startupLocationResolved = true;
+    state.lastPosition = {lat, lon};
+    if (state.startupLocationWatchId !== null) navigator.geolocation.clearWatch(state.startupLocationWatchId);
+    state.startupLocationWatchId = null;
+    if (state.locationMarker) state.locationMarker.setLatLng([lat, lon]);
+    if (state.map && !document.body.classList.contains('nav-active')) {
+      state.map.flyTo([lat, lon], Math.max(15, state.map.getZoom()), {duration: 1});
+    }
+    toast('Localisation trouvée. Carte centrée sur votre position.');
+  }, error => {
+    if (error.code === error.PERMISSION_DENIED) {
+      if (state.startupLocationWatchId !== null) navigator.geolocation.clearWatch(state.startupLocationWatchId);
+      state.startupLocationWatchId = null;
+      toast('Accès GPS refusé · Bruxelles-Centre affiché.');
+    }
+  }, {enableHighAccuracy: true, maximumAge: 0, timeout: 20000});
+}
+
 function initialRouteBearing() {
   const path = state.route?.path || [];
   for (let index = 1; index < path.length; index++) {
@@ -508,7 +533,8 @@ function initializeMap() {
   if (!window.L) { toast('La bibliothèque de carte n’a pas pu se charger. Réessayez avec une connexion active.'); return false; }
   $('.map-panel').classList.add('map-ready');
   state.map = L.map('map', { zoomControl: false, attributionControl: true, preferCanvas: true, rotate: true, bearing: 0, touchRotate: false, zoomSnap: 0.25, dragging: true, touchZoom: true, doubleClickZoom: true })
-    .setView([50.337, 4.52], 12);
+    .setView(STARTUP_FALLBACK_CENTER, 12);
+  state.locationMarker = L.circleMarker(STARTUP_FALLBACK_CENTER, {radius: 7, color: '#ffffff', weight: 3, fillColor: '#1688ff', fillOpacity: 1, interactive: false}).addTo(state.map);
   L.control.zoom({ position: 'bottomright' }).addTo(state.map);
   state.map.on('dragstart', () => setNavigationFollow(false));
   state.map.on('zoomstart', () => {
@@ -2375,3 +2401,4 @@ updateUnits(state.units);
 window.addEventListener('pagehide', () => persistNavigationResume(true));
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
 initializeMap();
+locateOnStartup();
